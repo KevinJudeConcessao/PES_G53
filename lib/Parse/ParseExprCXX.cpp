@@ -3224,65 +3224,71 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
 }
 
 ExprResult
-Parser::ParseCXXReflectExprExpression() {
-    assert(Tok.isOneOf(tok::kw_reflect_expr,
-                       tok::kw___reflection_query_enum_name,
-                       tok::kw___reflection_query_enum_num_val,
-                       tok::kw___reflection_query_enum_values)
-           && "Not a reflect_expr expression!");
+Parser::ParseReflectExprExpression() {
+    assert(Tok.is(tok::kw_reflect_expr) && "Not a reflect_expr expression!");
     Token OpTok = Tok;
-    SourceLocation KWLocation = Tok.getLocation();
-    ConsumeToken();
+    SourceLocation LeftParenthesisLoc, RightParenthesisLoc, TypeLoc;
+    SourceLocation KWLoc = ConsumeToken();
     if (Tok.isNot(tok::l_paren)) {
-        if (isTypeIdUnambiguously()) {
-            DeclSpec DS(AttrFactory);
-            ParseSpecifierQualifierList(DS);
-            Declarator DeclaratorInfo(DS, Declarator::TheContext::TypeNameContext);
-            ParseDeclarator(DeclaratorInfo);
-            SourceLocation LeftParenthesisLoc = PP.getLocForEndOfToken(OpTok.getLocation());
-            SourceLocation RightParenthesisLoc = PP.getLocForEndOfToken(PrevTokLocation);
-            Diag(OpTok.getLocation(), diag::err_expected_parentheses_around_typename)
+        LeftParenthesisLoc = Tok.getLocation();
+        SkipUntil(tok::semi, StopAtSemi);
+        RightParenthesisLoc = PP.getLocForEndOfToken(PrevTokLocation);
+        Diag(LeftParenthesisLoc, diag::err_expected_parentheses_around_typename)
                 << OpTok.getName()
                 << FixItHint::CreateInsertion(LeftParenthesisLoc, "(")
                 << FixItHint::CreateInsertion(RightParenthesisLoc, ")");
+        return ExprError();
+    }
+    Reflection Ref;
+    CXXScopeSpec ScopeSpec;
+    IdentifierInfo *LastIdent;
+    BalancedDelimiterTracker Tracker(*this, tok::l_paren);
+    /* Consume all the tokens till the last :: */
+    ParseOptionalCXXScopeSpecifier(ScopeSpec, ParsedType(), /*EnteringContext=*/ false,/*MayBePseudoDtor*/ nullptr, /*IsTypename*/ true);
+    if (ScopeSpec.isValid() && Tok.is(tok::identifier)) {
+        LastIdent = Tok.getIdentifierInfo();
+        TypeLoc = ConsumeToken();
+        if (!Actions.ActOnReflectionScopedIdentifier(ScopeSpec, LastIdent, TypeLoc, Ref))
+            return ExprError();
+    }
+    else if (isTypeIdUnambiguously()) {
+        DeclSpec DS(AttrFactory);
+        Declarator DeclaratorInfo(DS, Declarator::TheContext::TypeNameContext);
+        Tracker.consumeOpen();
+        LeftParenthesisLoc = Tracker.getOpenLocation();
+        ParseSpecifierQualifierList(DS);
+        ParseDeclarator(DeclaratorInfo);
+        if (DeclaratorInfo.isInvalidType()) {
+            Diag(LeftParenthesisLoc, diag::err_reflect_expr_id_not_found) << DeclaratorInfo;
             return ExprError();
         }
+        Actions.ActOnReflectionTypeIdentifier(DeclaratorInfo, Ref);
     }
-    BalancedDelimiterTracker Tracker(*this, tok::l_paren);
-    Tracker.consumeOpen();
-    SourceLocation LeftParenthesisLoc = Tracker.getOpenLocation();
-    DeclSpec DS(AttrFactory);
-    ParseSpecifierQualifierList(DS);
-    Declarator DeclaratorInfo(DS, Declarator::TheContext::TypeNameContext);
-    ParseDeclarator(DeclaratorInfo);
-    Tracker.consumeClose();
-    SourceLocation RightParenthesisLoc = Tracker.getCloseLocation();
-    if(OpTok.is(tok::kw___reflection_query_enum_name)) {
-        return Actions. ActOnCXXEnumNameExpression(DeclaratorInfo, getCurScope(), KWLocation,
-                                                     LeftParenthesisLoc, RightParenthesisLoc);
+    if (Tracker.consumeClose()) {
+        Diag(diag::err_expected_rparen_after) << "type-id in reflect_expr";
+        return ExprError();
     }
-    if(OpTok.is(tok::kw___reflection_query_enum_num_val)) {
-        return Actions.ActOnCXXEnumNumValExpression(DeclaratorInfo, getCurScope(), KWLocation,
-                                                     LeftParenthesisLoc, RightParenthesisLoc);
-    }
-    if(OpTok.is(tok::kw___reflection_query_enum_values)) {
-        return Actions.ActOnCXXEnumValuesExpression(DeclaratorInfo, getCurScope(), KWLocation,
-                                                     LeftParenthesisLoc, RightParenthesisLoc);
-    }
-    return Actions.ActOnCXXReflectExprExpression(DeclaratorInfo, getCurScope(), KWLocation,
-                                                 LeftParenthesisLoc, RightParenthesisLoc);
+    RightParenthesisLoc = Tracker.getCloseLocation();
+    return Actions.ActOnReflectExprExpression(KWLoc, LeftParenthesisLoc, Ref, RightParenthesisLoc);
 }
 
 ExprResult
-Parser::ParseCXXReflectionQueryExpression() {
-    assert(Tok.is(tok::kw___reflection_query) && "Not a __reflection_query");
-    SourceLocation KWLocation = Tok.getLocation();
-    ConsumeToken();
+Parser::ParseReflectionIntrinsicExpression() {
+    assert(Tok.is(tok::kw___reflection_intrinsic) && "Not a __reflection_intrinsic expression");
+    SourceLocation KWLocation = ConsumeToken();
+    SmallVector<Expr*, 2> IntrinsicArgs;
     BalancedDelimiterTracker Tracker(*this, tok::l_paren);
-    Tracker.consumeOpen();
-    IntegerLiteral* Integer = ParseConstantExpression().getAs<IntegerLiteral>();
-    llvm::APInt IntegerValue = Integer->getValue();
-    SourceLocation RParenLoc = Tok.getLocation();
-    Tracker.consumeClose();
-    return Actions.ActOnCXXEnumReflectQueryExpr(getCurScope(), IntegerValue.getLimitedValue(), KWLocation, RParenLoc);
+    if (Tracker.expectAndConsume(diag::err_expected, "("))
+        return ExprError();
+    do {
+        ExprResult Res = ParseConstantExpression();
+        assert(!Res.isInvalid() && "Not a valid constant expression in __reflection_intrinsic"
+                                   "expression");
+        IntrinsicArgs.push_back(Res.get());
+    } while (TryConsumeToken(tok::comma));
+   if (Tracker.consumeClose())
+       return ExprError();
+    SourceLocation LParenLoc = Tracker.getOpenLocation();
+    SourceLocation RParenLoc = Tracker.getCloseLocation();
+    return Actions.ActOnRefletionIntrinsicExpression(KWLocation, LParenLoc, IntrinsicArgs, RParenLoc);
 }

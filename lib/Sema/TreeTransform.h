@@ -2709,6 +2709,116 @@ public:
                                     Operand);
   }
 
+  ExprResult RebuildReflectionExpr(SourceLocation StartLoc, SourceLocation EndLoc, Reflection &Ref) {
+    QualType TargetObjectType;
+    if (const Decl *D = Ref.getAsDecl())
+        TargetObjectType = getSema().getReflectExprTypeforDecl(Decl, StartLoc);
+    if (TargetObjectType.isNull())
+        TargetObjectType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+    CXXConstructorDecl *TargetObjectCtor = getSema().LookupDefaultConstructor(
+                TargetObjectType.getTypePtr()->getAsCXXRecordDecl());
+    getSema().MarkFunctionReferenced(StartLoc, TargetObjectCtor);
+    CXXConstructExpr *CExpr = getSema().BuildCXXConstructExpr(StartLoc, TargetObjectType, TargetObjectCtor,
+                                           /*Elidable=*/ true, {},
+                                           /*HasMultipleCandidates=*/  false,
+                                           /*ListInitialization=*/     false,
+                                           /*StdListInitialization=*/  false,
+                                           /*ZeroInitialization=*/     true,
+                                           CXXConstructExpr::CK_Complete,
+                                           SourceRange(StartLoc, EndLoc));
+    return getSema().MaybeBindToTemporary(CExpr);
+
+  }
+
+  ExprResult RebuildReflectionIntrinsicExpr(SourceLocation KWLoc, SourceLocation LParenLoc,
+                                            ArrayRef<Expr*> IntrinsicArgs, SourceLocation RParenLoc, QualType Ty) {
+      Expr *Res = new (Context) ReflectionIntrinsicExpr(KWLoc, LParenLoc, RParenLoc, IntrinsicArgs, Ty);
+      ReflectionIntrinsicExpr *E = Res.getAs<ReflectionIntrinsicExpr>();
+      ReflectionIntrinsicsID ID = E->getIntrinsicID();
+      const Decl *D = E->getASTNodePtr();
+      FullSourceLoc StartLoc(D->getLocStart(), getSema().getSourceManager());
+      FullSourceLoc EndLoc(D->getLocEnd(), getSema().getSourceManager());
+      CXXTemporaryObjectExpr *Temp = nullptr;
+      Expr *LineNumber = nullptr;
+      Expr *ColumnNumber = nullptr;
+      ExprResult Result;
+      switch (ID) {
+        case RI_Name:
+          if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D)) {
+              Temp = getSema().CreateStringViewObject(NDecl->getName(), E->getLocStart())
+                      .getAs<CXXTemporaryObjectExpr>();
+              Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          }
+          break;
+        case RI_ParentDecl:
+        case RI_LexicalParentDecl:
+        case RI_PreviousDecl:
+        case RI_NextDecl:
+          Temp = getSema().CreateMetaDeclObject(Ty, Loc).getAs<CXXTemporaryObjectExpr>();
+          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          break;
+        case RI_IsComplete:
+          Result = new (getSema().Context) CXXBoolLiteralExpr(D->getCanonicalDecl() ?
+                                                              true : false, getSema().Context.IntTy, E->getLocStart());
+          break;
+        case RI_SourceFileName:
+          const FileEntry *Entry = StartLoc.getFileEntry();
+          Temp = getSema().CreateStringViewObject(Entry->getName(), E->getLocStart()).getAs<CXXTemporaryObjectExpr>();
+          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+        case RI_SourceFileStart:
+          LineNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, StartLoc.getLineNumber()),
+                                                    getSema().Context.IntTy, E->getLocStart());
+          ColumnNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, StartLoc.getColumnNumber()),
+                                                    getSema().Context.IntTy, E->getLocStart());
+          Temp = getSema().CreateTupleObject(Ty, llvm::makeArrayRef({ LineNumber, ColumnNumber }), E->getLocStart())
+                                .getAs<CXXTemporaryObjectExpr>();
+          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          break;
+        case RI_SourceFileEnd:
+          LineNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, EndLoc.getLineNumber()),
+                                                    getSema().Context.IntTy, E->getLocStart());
+          ColumnNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, EndLoc.getColumnNumber()),
+                                                    getSema().Context.IntTy, E->getLocStart());
+          Temp = getSema().CreateTupleObject(Ty, llvm::makeArrayRef({ LineNumber, ColumnNumber }), E->getLocStart())
+                                .getAs<CXXTemporaryObjectExpr>();
+          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          break;
+        case RI_Begin:
+        case RI_End:
+          Temp = getSema().CreateMetaDeclObject(Ty, Loc).getAs<CXXTemporaryObjectExpr>();
+          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          break;
+        case RI_Enumerators:
+          if (const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D)) {
+              llvm::SmallVector<Expr*, 8> Enumerators;
+              for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
+                   first != last; ++first) {
+                  QualType EnumeratorTy = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
+                  Enumerators.push_back(getSema().CreateMetaDeclObject(EnumeratorTy, E->getLocStart()));
+              }
+              Temp = getSema().CreateTupleObject(Ty, Enumerators, E->getLocStart()).getAs<CXXTemporaryObjectExpr>();
+              Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          }
+          break;
+        case RI_EnumSize:
+          if (const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D)) {
+              EnumDecl::enumerator_iterator first = EDecl->enumerator_begin();
+              EnumDecl::enumerator_iterator last  = EDecl->enumerator_end();
+              Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, std::distance(first, last)),
+                                              getSema().Context.IntTy, E->getLocStart());
+          }
+          break;
+        case RI_EnumConstantValue:
+          if (const EnumConstantDecl *ECDecl = llvm::dyn_cast<EnumConstantDecl>(D)) {
+              Result = IntegerLiteral::Create(getSema().Context, ECDecl->getInitVal().getExtValue(),
+                                              getSema().Context.IntTy, E->getLocStart());
+          }
+          break;
+        default:
+          llvm_unreachable("Unknown reflection intrinsic !!!");
+      }
+  }
+
   /// \brief Build a new type trait expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -12650,62 +12760,101 @@ TreeTransform<Derived>::TransformCapturedStmt(CapturedStmt *S) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *Expr) {
-    QualType TargetType = Expr->getType();
-    CXXRecordDecl *ReflectDecl = TargetType.getTypePtr()->getAsCXXRecordDecl();
-    CXXConstructorDecl *DefCtor = getSema().LookupDefaultConstructor(ReflectDecl);
-    getSema().MarkFunctionReferenced(Expr->getLocStart(), DefCtor);
-    return getSema().BuildCXXConstructExpr(Expr->getLocStart(), TargetType, DefCtor,
-                             /*Elidable=*/ true, {},
-                             /*HasMultipleCandidates=*/  false,
-                             /*ListInitialization=*/     false,
-                             /*StdListInitialization=*/  false,
-                             /*ZeroInitialization=*/     true,
-                             Expr->getConstructKind(), SourceRange(Expr->getLocStart(), Expr->getLocEnd()));
-
+TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
+    Reflection Ref = E->getReflection();
+    if (const Decl *D = Ref.getAsDecl()) {
+        if (const ValueDecl *VDecl = llvm::dyn_cast<ValueDecl>(D)) {
+            DeclRefExpr *DRE = new (getSema().Context) DeclRefExpr(const_cast<ValueDecl*>(VDecl),
+                                                                   /*RefersToEnclosingVariableOrCapture=*/ false,
+                                                                   VDecl->getType(), ExprValueKind::VK_RValue,
+                                                                   E->getLocStart());
+            ExprResult Res = getDerived().TransformExpr(DRE);
+            if (Res.isInvalid())
+                return ExprError();
+            Ref = Reflection(Res.getAs<DeclRefExpr>()->getDecl());
+        } else if (const TypeDecl *TDecl = llvm::dyn_cast<TypeDecl>(D)) {
+            QualType Ty = getSema().getASTContext().getTypeDeclType(TDecl);
+            QualType TransformedTy = getDerived().TransformType(Ty);
+            if (TransformedTy.isNull())
+                return ExprError();
+            if (const TagDecl *TgDecl = TransformedTy.getTypePtr()->getAsTagDecl())
+                Ref = Reflection(const_cast<TagDecl*>(TgDecl));
+            else
+                Ref = Reflection(TransformedTy);
+        } else if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D)) {
+            if (!llvm::isa<NamespaceDecl>(NDecl)) {
+                llvm_unreachable("Reflection not supported for other decls !!");
+                Ref = getDerived().TransformDecl(NDecl->getLocStart(), const_cast<NamespaceDecl*>(NDecl));
+            }
+        }
+    }
+    else if (const Type *T = Ref.getAsType()) {
+        Ref = Reflection(getDerived().TransformType(Ref.getQualType()));
+    }
+    else if (const Expr *Ex = Ref.getAsExpr()) {
+        Ref = Reflection(getDerived().TransformExpr(Ex).get());
+    }
+    return RebuildReflectionExpr(E->getLocStart(), E->getLocEnd(), Ref);
 }
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXEnumReflectionQueryExpr(CXXEnumReflectionQueryExpr *E) {
-    EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(E->getDecl());
-    uint64_t count = 0;
-    switch (static_cast<CXXEnumReflectionQueryExpr::EnumReflectionQueryKind>(E->getQueryKind())) {
-    case CXXEnumReflectionQueryExpr::EK_GET_TYPE_NAME:
-        return Sema::CreateStringViewObject(getSema(), EDecl->getName(), E->getLocStart());
-
-    case CXXEnumReflectionQueryExpr::EK_GET_ENUMERATOR_COUNT:
-        count = std::distance(EDecl->enumerator_begin(), EDecl->enumerator_end());
-        return IntegerLiteral::Create(getSema().Context, llvm::APInt(64, count, false),
-                                      getSema().Context.UnsignedLongTy, E->getLocStart());
-
-    case CXXEnumReflectionQueryExpr::EK_GET_ENUMERATORS:
-        llvm::SmallVector<Expr*, 4> Args;
-        CXXRecordDecl *ECDecl = getSema().getMetaEnumConstantDecl(E->getLocStart());
-        DeclContextLookupResult Res = getSema().LookupConstructors(ECDecl);
-        CXXConstructorDecl *CtorDecl = llvm::dyn_cast<CXXConstructorDecl>(Res.front());
-        QualType TargetType(ECDecl->getTypeForDecl(), 0);
-        for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
-             first != last; ++ first) {
-            EnumConstantDecl *EnumConstant = *first;
-            Expr *FirstArg =
-                    Sema::CreateStringViewObject(getSema(), EnumConstant->getName(), E->getLocStart()).get();
-            Expr *SecondArg = IntegerLiteral::Create(getSema().Context, llvm::APInt(32, EnumConstant->getInitVal().getLimitedValue(),
-                                                                /*IsSigned=*/ false), getSema().Context.IntTy, E->getLocStart());
-            llvm::SmallVector<Expr*, 2> Args({FirstArg, SecondArg});
-            CXXConstructExpr *Construction =
-                    getSema().BuildCXXConstructExpr(E->getLocStart(), TargetType, CtorDecl, true, Args,
-                                                    /*HasMultipleCandidates=*/  false,
-                                                    /*ListInitialization=*/     false,
-                                                    /*StdListInitialization=*/  false,
-                                                    /*ZeroInitialization=*/     true,
-                                                    E->getConstructKind(),
-                                                    SourceRange(E->getLocStart(), E->getLocEnd())).template getAs<CXXConstructExpr>();
-            Args.push_back(Construction);
+TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
+    QualType ExprType = E->getType();
+    if (ExprType->isDependentType()) {
+        const Decl *D = E->getASTNodePtr();
+        ReflectionIntrinsicsID ID = E->getIntrinsicID();
+        SourceLocation Loc = E->getLocStart();
+        if (ID == RI_ParentDecl) {
+            const DeclContext *DContext = D->getDeclContext();
+            if (!DContext)
+                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+            else
+                ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
         }
-        return Sema::CreateTupleObject(getSema(), Args, E->getLocStart());
+        else if (ID == RI_LexicalParentDecl) {
+            const DeclContext *DContext = D->getLexicalDeclContext();
+            if (!DContext)
+                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+            else
+                ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
+        }
+        else if (ID == RI_Enumerators) {
+            if (!llvm::isa<EnumDecl>(D))
+                return ExprError();
+            EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D->getCanonicalDecl());
+            TemplateArgumentListInfo ArgInfo;
+            for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
+                 first != last; ++ first) {
+                QualType ArgType = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
+                ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(ArgType),
+                                        getSema().getASTContext().getTrivialTypeSourceInfo(ArgType)));
+
+            }
+            ExprType = getSema().BuildStdTuple(&ArgInfo, E->getLocStart());
+        }
+        else if (ID == RI_Begin) {
+            if (const DeclContext *DContext = llvm::dyn_cast<DeclContext>(D)) {
+                DeclContext::decl_iterator first = DContext->decls_first();
+                DeclContext::decl_iterator last  = DContext->decls_end();
+                if (first != last)
+                    ExprType = getSema().getReflectExprTypeforDecl(*first, Loc);
+                else
+                    ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+            }
+        }
+        else if (ID == RI_End)
+            ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
     }
-    llvm_unreachable("No matching query kind value found !!!");
+    SmallVector<Expr*, 2> ExprArgs;
+    for (Expr *Arg: E->getExprArgs()) {
+        ExprResult Res = getDerived().TransformExpr(Arg);
+        if (Res.isInvalid())
+            return ExprError();
+        ExprArgs.push_back(Res.get());
+    }
+    QualType Ty = getDerived().TransformType(ExprType);
+    return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), E->getLocStart(), ExprArgs, E->getLocEnd(), Ty);
 }
 
 } // end namespace clang

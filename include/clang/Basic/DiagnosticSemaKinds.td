@@ -1987,9 +1987,17 @@ def err_auto_bitfield : Error<
   "cannot pass bit-field as __auto_type initializer in C">;
 
 // C++ type reflection support
+def err_reflect_expr_requires_header : Error<
+  "cannot use reflect_expr without including 'reflection.hpp'">;
 def err_implied_std_reflection_decl_not_found : Error<
   "cannot reflect on types since reflection support classes not found;"
   "include 'reflection.hpp'">;
+def err_reflect_expr_id_found_ambiguous: Error<
+  "type-id %0 in reflect_expr is ambiguous">;
+def err_reflect_expr_id_found_overloaded: Error<
+ "type-id %0 in reflect_expr has multiple candidates">;
+def err_reflect_expr_id_not_found: Error<
+ "type-id %0 in reflect_expr was not found">;
 def err_malformed_std_reflection_decl : Error<
     "std::reflection::'decl_class' must be a class template with a single type parameter">;
 def err_implied_std_tuple_not_found : Error<

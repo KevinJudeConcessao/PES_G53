@@ -30,6 +30,9 @@
 #ifndef CONCEPTS_KEYWORD
 #define CONCEPTS_KEYWORD(X) KEYWORD(X,KEYCONCEPTS)
 #endif
+#ifndef REFLECTION_KEYWORD
+#define REFLECTION_KEYWORD(X) CXX11_KEYWORD(X,0)
+#endif
 #ifndef MODULES_KEYWORD
 #define MODULES_KEYWORD(X) KEYWORD(X,KEYMODULES)
 #endif
@@ -337,12 +340,11 @@ KEYWORD(using                       , KEYCXX)
 KEYWORD(virtual                     , KEYCXX)
 KEYWORD(wchar_t                     , WCHARSUPPORT)
 
-// C++ Reflection support. Requires migration to KEYREFLECT
-CXX11_KEYWORD(reflect_expr                      , KEYCXX)
-CXX11_KEYWORD(__reflection_query                , KEYCXX)
-CXX11_KEYWORD(__reflection_query_enum_name      , KEYCXX)
-CXX11_KEYWORD(__reflection_query_enum_num_val   , KEYCXX)
-CXX11_KEYWORD(__reflection_query_enum_values    , KEYCXX)
+// C++ Reflection support.
+REFLECTION_KEYWORD(reflect_expr)
+
+// C++ Reflection intrinsic.
+REFLECTION_KEYWORD(__reflection_intrinsic)
 
 // C++ 2.5p2: Alternative Representations.
 CXX_KEYWORD_OPERATOR(and     , ampamp)

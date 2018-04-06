@@ -809,14 +809,6 @@ public:
   /// resides.
   NamespaceDecl *StdReflectionNamespace;
 
-  /// \brief The C++ "reflection::meta_enum" template, which is defined in
-  /// \<reflection.hpp>
-  ClassTemplateDecl *ReflectionEnumDecl;
-
-  /// \brief The C++ "reflection::meta_enum_constant" template, which is defined in
-  /// \<reflection.hpp>
-  CXXRecordDecl *MetaEnumConstantDecl;
-
   /// \brief The C++ "std::string_view" class which is defined in the C++
   /// standard library
   CXXRecordDecl *StdStringViewCache;
@@ -4218,27 +4210,17 @@ public:
   ExprResult ActOnOMPArraySectionExpr(Expr *Base, SourceLocation LBLoc,
                                       Expr *LowerBound, SourceLocation ColonLoc,
                                       Expr *Length, SourceLocation RBLoc);
-  ExprResult ActOnCXXReflectExprExpression(Declarator &D, Scope *S,
-                                      SourceLocation KWLocation,
-                                      SourceLocation LParenLoc,
-                                      SourceLocation RParenLoc);
-  ExprResult ActOnCXXEnumNameExpression(Declarator &D, Scope *S,
-                                           SourceLocation KWLocation,
-                                           SourceLocation LParenLoc,
-                                           SourceLocation RParenLoc);
-  ExprResult ActOnCXXEnumNumValExpression(Declarator &D, Scope *S,
-                                           SourceLocation KWLocation,
-                                           SourceLocation LParenLoc,
-                                           SourceLocation RParenLoc);
-  ExprResult ActOnCXXEnumValuesExpression(Declarator &D, Scope *S,
-                                           SourceLocation KWLocation,
-                                           SourceLocation LParenLoc,
-                                           SourceLocation RParenLoc);
-  ExprResult ActOnCXXEnumReflectQueryExpr(Scope *S, unsigned QueryNumber, SourceLocation KWLocation, SourceLocation RParenLoc);
-  ExprResult BuildCXXReflectExprExpression(TagDecl *TyPtr, QualType T, SourceLocation KWLocation,
-                                           SourceLocation LParenLoc, SourceLocation RParenLoc);
-  ExprResult BuildCXXEnumReflectQueryExpr(TagDecl *TyPtr, unsigned QueryNumber, SourceLocation KWLocation,
-                                        SourceLocation RParenLoc);
+
+  /* C++ Reflection Support */
+  bool ActOnReflectionScopedIdentifier(CXXScopeSpec &ScopeSpec, IdentifierInfo *II,
+                                       SourceLocation IDLocation, Reflection &Ref);
+  bool ActOnReflectionTypeIdentifier(const Declarator &D, Reflection &Ref);
+  ExprResult ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LParenLocation,
+                                        Reflection &Ref, SourceLocation RParenLocation);
+  ExprResult BuildReflectExprExpression();
+  ExprResult ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
+                                                ArrayRef<Expr*> IntrinsicArgs, SourceLocation RParenLoc);
+  ExprResult BuildReflectionIntrinsicExpression();
 
   // This struct is for use by ActOnMemberAccess to allow
   // BuildMemberReferenceExpr to be able to reinvoke ActOnMemberAccess after
@@ -4511,14 +4493,26 @@ public:
   NamespaceDecl *getStdNamespace() const;
   NamespaceDecl *getOrCreateStdNamespace();
 
-  NamespaceDecl *lookupStdExperimentalNamespace();
+  enum MetaObjecKind {
+      MK_Decl,
+      MK_Seq,
+      MK_Enum,
+      MK_EnumConstant,
+      MK_Class,
+      MK_Namespace
+  };
 
+  NamespaceDecl *lookupStdExperimentalNamespace();
   NamespaceDecl *lookupStdReflectionNamespace();
   QualType BuildStdTuple(TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc);
+  QualType BuildReflectionObjectType(const StringRef &TargetMeta, const TemplateArgument &IntTemplateArg,
+                                     SourceLocation Loc);
+  QualType getReflectExprTypeforDecl(const Decl *DeclPtr, SourceLocation Loc);
+  QualType getInvalidReflectExprTypeForDecl(SourceLocation Loc);
+  ExprResult CreateStringViewObject(StringRef String, SourceLocation Loc);
+  ExprResult CreateTupleObject(QualType Ty, MultiExprArg Args, SourceLocation Loc);
+  ExprResult CreateMetaDeclObject(QualType MetaDeclObjectType, SourceLocation Loc);
   CXXRecordDecl *getStdStringView(SourceLocation Loc);
-  CXXRecordDecl *getMetaEnumConstantDecl(SourceLocation Loc);
-  static ExprResult CreateStringViewObject(Sema &S, StringRef String, SourceLocation Loc);
-  static ExprResult CreateTupleObject(Sema &S, MultiExprArg Args, SourceLocation Loc);
 
   CXXRecordDecl *getStdBadAlloc() const;
   EnumDecl *getStdAlignValT() const;

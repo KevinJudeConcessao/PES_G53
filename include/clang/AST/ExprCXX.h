@@ -21,9 +21,12 @@
 #include "clang/AST/LambdaCapture.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/UnresolvedSet.h"
+#include "clang/AST/Reflection.h"
 #include "clang/Basic/ExpressionTraits.h"
 #include "clang/Basic/TypeTraits.h"
+#include "clang/Basic/ReflectionIntrinsicConstants.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/ADT/PointerIntPair.h"
 
 namespace clang {
 
@@ -31,6 +34,7 @@ class CXXTemporary;
 class MSPropertyDecl;
 class TemplateArgumentListInfo;
 class UuidAttr;
+class Reflection;
 
 //===--------------------------------------------------------------------===//
 // C++ Expressions.
@@ -4296,77 +4300,83 @@ public:
 };
 
 /// \brief Represents the reflection of types such as, classes, structs or enums
-class CXXReflectExpr :  public Expr {
+class ReflectionExpr : public Expr {
 private:
-    friend class ASTStmtReader;
-    friend class ASTStmtWriter;
     SourceLocation KeywordLocation;
     SourceLocation LParenLocation;
     SourceLocation RParenLocation;
-    unsigned ConstructKind;
-    EnumDecl *EDecl;
+    Reflection R;
 public:
-    CXXReflectExpr(SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation,
-                EnumDecl *EDecl, QualType T, unsigned ConstructKind, ExprValueKind ValueKind, ExprObjectKind ObjectKind, bool TypeDependent,
-                bool ValueDependent, bool InstantiationDependent, bool UnexpandedParameterPack)
-        :Expr(CXXReflectExprClass, T, ValueKind, ObjectKind, TypeDependent, ValueDependent, InstantiationDependent, UnexpandedParameterPack),
-          KeywordLocation(KeywordLocation), LParenLocation(LParenLocation), RParenLocation(RParenLocation),
-          ConstructKind(ConstructKind), EDecl(EDecl) {}
-    CXXReflectExpr(EmptyShell Empty)
-        :Expr(CXXReflectExprClass, Empty) {}
+    ReflectionExpr(SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation, Reflection R,
+                   QualType T, bool TypeDependent, bool ValueDependent, bool InstantiationDependent, bool UnexpandedParameterPack)
+        :Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary, TypeDependent, ValueDependent, InstantiationDependent, UnexpandedParameterPack),
+          KeywordLocation(KeywordLocation), LParenLocation(LParenLocation), RParenLocation(RParenLocation) {}
+    ReflectionExpr(EmptyShell Empty)
+        :Expr(ReflectionExprClass, Empty) {}
     SourceLocation getKeywordLoc() const LLVM_READONLY {  return KeywordLocation;  }
     SourceLocation getLocStart()   const LLVM_READONLY {  return LParenLocation;   }
     SourceLocation getLocEnd()     const LLVM_READONLY {  return RParenLocation;   }
-    unsigned getConstructKind()    const LLVM_READONLY {  return ConstructKind;    }
-    NamedDecl *getDecl()           const LLVM_READONLY {  return EDecl;             }
+    Reflection getReflection()     const LLVM_READONLY {  return R; }
     static bool classof(const Stmt *T) {
-        return T->getStmtClass() == CXXReflectExprClass;
+        return T->getStmtClass() == ReflectionExprClass;
     }
     child_range children() {
       return child_range(child_iterator(), child_iterator());
     }
-};
-
-
-class CXXEnumReflectionQueryExpr : public Expr {
-public:
-    enum EnumReflectionQueryKind {
-        EK_GET_TYPE_NAME = 1,
-        EK_GET_ENUMERATOR_COUNT,
-        EK_GET_ENUMERATORS
-    };
-private:
+    const_child_range children() const {
+        return const_child_range(const_child_iterator(), const_child_iterator());
+    }
     friend class ASTStmtReader;
     friend class ASTStmtWriter;
-    SourceLocation QueryLocation;
+};
+
+class ReflectionIntrinsicExpr : public Expr {
+private:
+    SourceLocation KeywordLocation;
+    SourceLocation LParenLocation;
     SourceLocation RParenLocation;
-    unsigned QueryKind;
-    unsigned ConstructKind;
-    EnumDecl *EDecl;
+    using PtrIntPair = llvm::PointerIntPair<Decl*, sizeof(ReflectionIntrinsicsID), ReflectionIntrinsicsID>;
+    ArrayRef<Expr *> ArgsList;
+    PtrIntPair Args;
 public:
-   CXXEnumReflectionQueryExpr(SourceLocation QueryLocation, SourceLocation RParenLocation, EnumDecl *EDecl, unsigned QueryKind,
-                    unsigned ConstructKind, QualType T, ExprValueKind ValueKind, ExprObjectKind ObjectKind, bool TypeDependent,
-                    bool ValueDependent, bool InstantiationDependent, bool UnexpandedParameterPack)
-            :Expr(CXXEnumReflectionQueryExprClass, T, ValueKind, ObjectKind, TypeDependent, ValueDependent,
-                  InstantiationDependent, UnexpandedParameterPack),
-                  QueryLocation(QueryLocation), RParenLocation(RParenLocation), QueryKind(QueryKind),
-                  ConstructKind(ConstructKind), EDecl(EDecl) {}
-    CXXEnumReflectionQueryExpr(EmptyShell Empty)
-        : Expr(CXXEnumReflectionQueryExprClass, Empty) {}
-    SourceLocation getKeywordLoc() const LLVM_READONLY { return QueryLocation;  }
-    SourceLocation getLocStart()   const LLVM_READONLY { return QueryLocation;  }
-    SourceLocation getLocEnd()     const LLVM_READONLY { return RParenLocation; }
-    unsigned getConstructKind()    const LLVM_READONLY { return ConstructKind;  }
-    unsigned getQueryKind() const {
-        return QueryKind;
+    ReflectionIntrinsicExpr(SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation,
+                            ArrayRef<Expr *> ArgsList, QualType Ty)
+        : Expr(ReflectionIntrinsicExprClass, Ty, VK_RValue, OK_Ordinary, /*TypeDependent=*/ false, /*ValueDependent=*/ true,
+               /*InstantiationDependent=*/ false, /*UnexpandedParameterPack=*/ false),
+          KeywordLocation(KeywordLocation), LParenLocation(LParenLocation),RParenLocation(RParenLocation),
+          ArgsList(ArgsList), Args() {
+        Expr *DeclPtrExpr = IntrinsicArgs[0];
+        Expr *IntrinsicIDExpr = IntrinsicArgs[1];
+        llvm::APSInt DeclPtr, IntrinsicID;
+        assert(DeclPtrExpr->EvaluateAsInt(DeclPtr, Context) && "Could not evaluate DeclPtrExpr as integer");
+        assert(IntrinsicIDExpr->EvaluateAsInt(IntrinsicID, Context) && "Could not evaluate IntrinsicIDExpr as integer");
+        Args.setPointerAndInt(reinterpret_cast<Decl*>(DeclPtr.getExtValue()), static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue()));
     }
-    NamedDecl *getDecl() const LLVM_READONLY { return EDecl; }
-    static bool classof(const Stmt *T) {
-        return T->getStmtClass() == CXXEnumReflectionQueryExprClass;
-    }
+    ReflectionIntrinsicExpr(EmptyShell Empty)
+        :Expr(ReflectionIntrinsicExprClass, Empty) {}
+    SourceLocation getKeywordLoc() const LLVM_READONLY {  return KeywordLocation;  }
+    SourceLocation getLocStart()   const LLVM_READONLY {  return LParenLocation;   }
+    SourceLocation getLocEnd()     const LLVM_READONLY {  return RParenLocation;   }
+    const Decl* getASTNodePtr()   const LLVM_READONLY  {  return Args.getPointer() }
+    ReflectionIntrinsicsID getIntrinsicID()  const LLVM_READONLY {  return Args.getInt();  }
+    ArrayRef<Expr*> getExprArgs() const { return ArgsList; }
     child_range children() {
-        return child_range(child_iterator(), child_iterator());
+        return child_range(ArgsList.begin(), ArgsList.end());
     }
+    const_child_range children() const {
+        return const_child_range(ArgsList.begin(), ArgsList.end());
+    }
+    static bool classof(const Stmt *T) {
+        return T->getStmtClass() == ReflectionIntrinsicExprClass;
+    }
+    friend class ASTStmtReader;
+    friend class ASTStmtWriter;
+};
+
+class ReflectionIntrinsicResultExpr : public Expr {
+private:
+    Expr *Result;
+
 };
 
 }  // end namespace clang

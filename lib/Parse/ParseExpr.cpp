@@ -594,7 +594,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [C++11] 'noexcept' '(' expression ')' [C++11 5.3.7]
 /// [C++]   new-expression
 /// [C++]   delete-expression
-/// [C++2x] reflect-expression
+/// [C++2X] reflect-expression
 ///
 ///       unary-operator: one of
 ///         '&'  '*'  '+'  '-'  '~'  '!'
@@ -721,6 +721,13 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [Clang] unary-type-trait:
 ///                   '__is_aggregate'
 ///                   '__trivially_copyable'
+/// [C++2X] reflect-expression:
+///             reflect-expr-expression
+///             reflection-intrinsic-expression
+/// [C++2X] reflect-expr-expression
+///             'reflect_expr' '(' type-id ')'
+/// [C++2X] reflect-intrinsic-expression
+///             '__reflection_intrinsic' '(' identifier ',' enumeration-constant ')'
 ///
 ///       binary-type-trait:
 /// [GNU]             '__is_base_of'       
@@ -1157,13 +1164,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___builtin_omp_required_simd_align:
     return ParseUnaryExprOrTypeTraitExpression();
 
-  case tok::kw_reflect_expr: // unary-expression: 'reflect_expr' '(' type-id ')'
-  case tok::kw___reflection_query_enum_name:
-  case tok::kw___reflection_query_enum_num_val:
-  case tok::kw___reflection_query_enum_values:
-    return ParseCXXReflectExprExpression();
-  case tok::kw___reflection_query:
-    return ParseCXXReflectionQueryExpression();
+  case tok::kw_reflect_expr:
+    return ParseReflectExprExpression();
+  case tok::kw___reflection_intrinsic:
+    return ParseReflectionIntrinsicExpression();
 
   case tok::ampamp: {      // unary-expression: '&&' identifier
     SourceLocation AmpAmpLoc = ConsumeToken();
@@ -1894,11 +1898,10 @@ Parser::ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
 /// [GNU]   '__alignof' '(' type-name ')'
 /// [C11]   '_Alignof' '(' type-name ')'
 /// [C++11] 'alignof' '(' type-id ')'
-/// [C++2A] 'reflect_expr' '(' type-id ')'
 /// \endverbatim
 ExprResult Parser::ParseUnaryExprOrTypeTraitExpression() {
   assert(Tok.isOneOf(tok::kw_sizeof, tok::kw___alignof, tok::kw_alignof,
-                     tok::kw__Alignof, tok::kw_vec_step, tok::kw_reflect_expr,
+                     tok::kw__Alignof, tok::kw_vec_step,
                      tok::kw___builtin_omp_required_simd_align) &&
          "Not a sizeof/alignof/vec_step/reflect_expr expression!");
   Token OpTok = Tok;

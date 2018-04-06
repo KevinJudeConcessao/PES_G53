@@ -154,8 +154,8 @@ def DependentCoawaitExpr : DStmt<Expr>;
 def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 
 // C++ Reflection TS expressions
-def CXXReflectExpr : DStmt<Expr>;
-def CXXEnumReflectionQueryExpr : DStmt<Expr>;
+def ReflectionExpr : DStmt<Expr>;
+def ReflectionIntrinsicExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

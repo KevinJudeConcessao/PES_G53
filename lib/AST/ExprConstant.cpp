@@ -4877,6 +4877,12 @@ public:
       return;
     VisitIgnoredValue(E);
   }
+  bool VisitReflectionExpr(const ReflectionExpr *E) {
+      return Error(E);
+  }
+  bool VisitReflectionIntrinsicExpr(const ReflectionIntrinsicExpr *E) {
+      return Error(E);
+  }
 };
 
 }
@@ -4894,7 +4900,7 @@ protected:
   typedef LValueExprEvaluatorBase LValueExprEvaluatorBaseTy;
   typedef ExprEvaluatorBase<Derived> ExprEvaluatorBaseTy;
 
-  bool Success(APValue::LValueBase B) {
+  bool Success(APValue::LValueBase B) {`
     Result.set(B);
     return true;
   }
@@ -8708,8 +8714,6 @@ bool IntExprEvaluator::VisitUnaryExprOrTypeTraitExpr(
                     Info.Ctx.getOpenMPDefaultSimdAlign(E->getArgumentType()))
             .getQuantity(),
         E);
-  default:
-     llvm_unreachable("reflect_expr cannot be converted to int");
   }
 
     llvm_unreachable("unknown expr/type trait");
@@ -9817,6 +9821,16 @@ static bool EvaluateVoid(const Expr *E, EvalInfo &Info) {
   assert(E->isRValue() && E->getType()->isVoidType());
   return VoidExprEvaluator(Info).Visit(E);
 }
+
+//===----------------------------------------------------------------------===//
+// CXX Reflection intrinsics evaluation
+//===----------------------------------------------------------------------===//
+namespace {
+class ReflectionInttrinsicExpr
+  : public ExprEvaluatorBase<ReflectionIntrinsicExpr> {
+
+};
+} // end anonymouss namespace
 
 //===----------------------------------------------------------------------===//
 // Top level Expr::EvaluateAsRValue method.
