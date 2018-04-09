@@ -6,8 +6,6 @@
 #include "clang/AST/Type.h"
 #include "llvm/ADT/DenseMap.h"
 
-using namespace llvm;
-
 namespace clang {
 enum ReflectionKind {
     RK_Empty,
@@ -15,9 +13,6 @@ enum ReflectionKind {
     RK_Type,
     RK_Expression
 };
-
-class Reflection;
-class DenseMapInfo<Reflection>;
 
 class Reflection {
 private:
@@ -30,14 +25,13 @@ private:
         return NewReflection;
     }
 public:
-    friend class DenseMapInfo<Reflection>;
-    Reflection() const
+    Reflection()
         : RKind(RK_Empty), Ptr(nullptr) {}
-    Reflection(Decl *D) const
+    Reflection(Decl *D)
         : RKind(RK_Decl), Ptr(D) {}
-    Reflection(QualType Ty) const
-        : RKind(RK_PrimitiveType), Ptr(Ty.getTypePtr()) {}
-    Reflection(Expr *E) const
+    Reflection(QualType Ty)
+        : RKind(RK_Type), Ptr(Ty.getTypePtr()) {}
+    Reflection(Expr *E)
         : RKind(RK_Expression), Ptr(E) {}
     bool IsEmpty() const {
         return RKind == RK_Empty && Ptr == nullptr;
@@ -45,14 +39,14 @@ public:
     bool IsDecl() const {
         return RKind == RK_Decl;
     }
-    bool IsPrimitiveType() const {
-        return RKind == RK_PrimitiveType;
+    bool IsType() const {
+        return RKind == RK_Type;
     }
     bool IsExpression() const {
         return RKind == RK_Expression;
     }
     explicit operator bool() const {
-        return IsNull();
+        return IsEmpty();
     }
     ReflectionKind GetKind() const {
         return RKind;
@@ -62,7 +56,7 @@ public:
     }
     template<typename T>
     const T* getAs() const {
-        return reinterpret_cast<T*>(Ptr);
+        return reinterpret_cast<const T*>(Ptr);
     }
     const Decl* getDecl() const {
         assert(IsDecl() && "Not a function/class/struct/enum/"
@@ -79,7 +73,7 @@ public:
     QualType getQualType() const {
         return QualType(getType(), 0);
     }
-    const Decl* getAsType() const {
+    const Type* getAsType() const {
         return IsType() ? getAs<const Type>() : nullptr;
     }
     const Expr* getExpr() const {

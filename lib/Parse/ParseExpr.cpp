@@ -1976,8 +1976,6 @@ ExprResult Parser::ParseUnaryExprOrTypeTraitExpression() {
     ExprKind = UETT_VecStep;
   else if (OpTok.is(tok::kw___builtin_omp_required_simd_align))
     ExprKind = UETT_OpenMPRequiredSimdAlign;
-  else if (OpTok.is(tok::kw_reflect_expr))
-    ExprKind = UETT_ReflectExpr;
 
   if (isCastExpr)
     return Actions.ActOnUnaryExprOrTypeTraitExpr(OpTok.getLocation(),

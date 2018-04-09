@@ -22,7 +22,8 @@ enum ReflectionIntrinsicsID {
     RI_EnumSize,
 
     // constants for enum constant support
-    RI_EnumConstantValue
+    RI_EnumConstantValue,
+    RI_NumID
 };
 
 #endif // LLVM_CLANG_BASIC_REFLECTIONINTRINSICCONSTANTS_H

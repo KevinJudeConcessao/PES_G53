@@ -1558,9 +1558,6 @@ void StmtPrinter::VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *Node){
   case UETT_OpenMPRequiredSimdAlign:
     OS << "__builtin_omp_required_simd_align";
     break;
-  case UETT_ReflectExpr:
-    OS << "reflect_expr";
-    break;
   }
   if (Node->isArgumentType()) {
     OS << '(';
@@ -2332,12 +2329,76 @@ void StmtPrinter::VisitCXXStdInitializerListExpr(CXXStdInitializerListExpr *E) {
   PrintExpr(E->getSubExpr());
 }
 
-void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *E) {
-  OS << "reflect_expr"; // add some more code for meaningful information
+void StmtPrinter::VisitReflectionExpr(ReflectionExpr *E) {
+  OS << "reflect_expr( ";
+  Reflection R = E->getReflection();
+  if (const Decl *D = R.getAsDecl()) {
+      if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D))
+          OS << NDecl->getDeclName();
+      else
+          OS << "<no-name>";
+  } else if (const Type *TyPtr = R.getAsType()) {
+      TyPtr->dump(OS);
+  } else if (const Expr *Expr = R.getAsExpr()) {
+      PrintExpr(E);
+  } else {
+      OS << "<empty reflection>";
+  }
+  OS << ")";
+
 }
 
-void StmtPrinter::VisitCXXEnumReflectionQueryExpr(CXXEnumReflectionQueryExpr *E) {
-  OS << "enum_reflect_query_expr"; // add some more code for meaningful information
+void StmtPrinter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
+  OS << "__reflection_intrinsic(" ;
+  StringRef IntrinsicName;
+  switch (E->getIntrinsicID()) {
+      default:
+          llvm_unreachable("Unknown reflection intrinsic ID");
+      case RI_Name:
+          IntrinsicName = "RI_Name";
+          break;
+      case RI_ParentDecl:
+          IntrinsicName = "RI_ParentDecl";
+          break;
+      case RI_LexicalParentDecl:
+          IntrinsicName = "RI_LexicalParentDecl";
+          break;
+      case RI_PreviousDecl:
+          IntrinsicName = "RI_PreviousDecl";
+          break;
+      case RI_NextDecl:
+          IntrinsicName = "RI_NextDecl";
+          break;
+      case RI_Begin:
+          IntrinsicName = "RI_Begin";
+          break;
+      case RI_End:
+          IntrinsicName = "RI_End";
+          break;
+      case RI_Enumerators:
+          IntrinsicName = "RI_Enumerators";
+          break;
+      case RI_IsComplete:
+          IntrinsicName = "RI_IsComplete";
+          break;
+      case RI_SourceFileName:
+          IntrinsicName = "RI_SourceFileName";
+          break;
+      case RI_SourceFileStart:
+          IntrinsicName = "RI_SourceFileStart";
+          break;
+      case RI_SourceFileEnd:
+          IntrinsicName = "RI_SourceFileEnd";
+          break;
+      case RI_EnumSize:
+          IntrinsicName = "RI_EnumSize";
+          break;
+      case RI_EnumConstantValue:
+          IntrinsicName = "RI_EnumConstantValue";
+          break;
+  }
+  OS << ")";
+  // #FIXME: Add more information !!
 }
 
 void StmtPrinter::VisitExprWithCleanups(ExprWithCleanups *E) {

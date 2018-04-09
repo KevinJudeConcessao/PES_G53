@@ -1478,8 +1478,8 @@ namespace clang {
       EXPR_CXX_FOLD,              // CXXFoldExpr
 
       // C++ Reflection Support
-      EXPR_CXX_REFLECT_EXPR,
-      EXPR_CXX_ENUM_REFLECTION_QUERY_EXPR,
+      EXPR_REFLECTION_EXPR,
+      EXPR_REFLECTION_INTRINSIC_EXPR,
 
       // CUDA
       EXPR_CUDA_KERNEL_CALL,       // CUDAKernelCallExpr      

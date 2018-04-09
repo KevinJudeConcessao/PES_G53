@@ -2387,8 +2387,8 @@ DEF_TRAVERSE_STMT(CallExpr, {})
 DEF_TRAVERSE_STMT(CXXMemberCallExpr, {})
 
 // These static-reflection expressions have no children
-DEF_TRAVERSE_STMT(CXXReflectExpr, {})
-DEF_TRAVERSE_STMT(CXXEnumReflectionQueryExpr, {})
+DEF_TRAVERSE_STMT(ReflectionExpr, {})
+DEF_TRAVERSE_STMT(ReflectionIntrinsicExpr, {})
 
 // These exprs (most of them), do not need any action except iterating
 // over the children.

@@ -4335,48 +4335,42 @@ private:
     SourceLocation KeywordLocation;
     SourceLocation LParenLocation;
     SourceLocation RParenLocation;
-    using PtrIntPair = llvm::PointerIntPair<Decl*, sizeof(ReflectionIntrinsicsID), ReflectionIntrinsicsID>;
+    using PtrIntPair = std::pair<Decl*, ReflectionIntrinsicsID>;
     ArrayRef<Expr *> ArgsList;
     PtrIntPair Args;
 public:
-    ReflectionIntrinsicExpr(SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation,
-                            ArrayRef<Expr *> ArgsList, QualType Ty)
+    ReflectionIntrinsicExpr(ASTContext &Context, SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation,
+                            ArrayRef<Expr *> IntrinsicArgs, QualType Ty)
         : Expr(ReflectionIntrinsicExprClass, Ty, VK_RValue, OK_Ordinary, /*TypeDependent=*/ false, /*ValueDependent=*/ true,
                /*InstantiationDependent=*/ false, /*UnexpandedParameterPack=*/ false),
           KeywordLocation(KeywordLocation), LParenLocation(LParenLocation),RParenLocation(RParenLocation),
-          ArgsList(ArgsList), Args() {
+          ArgsList(IntrinsicArgs), Args() {
         Expr *DeclPtrExpr = IntrinsicArgs[0];
         Expr *IntrinsicIDExpr = IntrinsicArgs[1];
         llvm::APSInt DeclPtr, IntrinsicID;
         assert(DeclPtrExpr->EvaluateAsInt(DeclPtr, Context) && "Could not evaluate DeclPtrExpr as integer");
         assert(IntrinsicIDExpr->EvaluateAsInt(IntrinsicID, Context) && "Could not evaluate IntrinsicIDExpr as integer");
-        Args.setPointerAndInt(reinterpret_cast<Decl*>(DeclPtr.getExtValue()), static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue()));
+        Args = std::make_pair(reinterpret_cast<Decl*>(DeclPtr.getExtValue()), static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue()));
     }
     ReflectionIntrinsicExpr(EmptyShell Empty)
         :Expr(ReflectionIntrinsicExprClass, Empty) {}
     SourceLocation getKeywordLoc() const LLVM_READONLY {  return KeywordLocation;  }
     SourceLocation getLocStart()   const LLVM_READONLY {  return LParenLocation;   }
     SourceLocation getLocEnd()     const LLVM_READONLY {  return RParenLocation;   }
-    const Decl* getASTNodePtr()   const LLVM_READONLY  {  return Args.getPointer() }
-    ReflectionIntrinsicsID getIntrinsicID()  const LLVM_READONLY {  return Args.getInt();  }
+    const Decl* getASTNodePtr()   const LLVM_READONLY  {  return Args.first; }
+    ReflectionIntrinsicsID getIntrinsicID()  const LLVM_READONLY {  return Args.second;  }
     ArrayRef<Expr*> getExprArgs() const { return ArgsList; }
     child_range children() {
-        return child_range(ArgsList.begin(), ArgsList.end());
+        return child_range(child_iterator(), child_iterator());
     }
     const_child_range children() const {
-        return const_child_range(ArgsList.begin(), ArgsList.end());
+        return const_child_range(const_child_iterator(), const_child_iterator());
     }
     static bool classof(const Stmt *T) {
         return T->getStmtClass() == ReflectionIntrinsicExprClass;
     }
     friend class ASTStmtReader;
     friend class ASTStmtWriter;
-};
-
-class ReflectionIntrinsicResultExpr : public Expr {
-private:
-    Expr *Result;
-
 };
 
 }  // end namespace clang

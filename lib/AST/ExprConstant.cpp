@@ -4900,7 +4900,7 @@ protected:
   typedef LValueExprEvaluatorBase LValueExprEvaluatorBaseTy;
   typedef ExprEvaluatorBase<Derived> ExprEvaluatorBaseTy;
 
-  bool Success(APValue::LValueBase B) {`
+  bool Success(APValue::LValueBase B) {
     Result.set(B);
     return true;
   }
@@ -10280,17 +10280,9 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CoyieldExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
 
-  case Expr::CXXReflectExprClass:
+  case Expr::ReflectionExprClass:
+  case Expr::ReflectionIntrinsicExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
-  case Expr::CXXEnumReflectionQueryExprClass:
-     switch (cast<CXXEnumReflectionQueryExpr>(E)->getQueryKind()) {
-        case CXXEnumReflectionQueryExpr::EK_GET_TYPE_NAME:
-        case CXXEnumReflectionQueryExpr::EK_GET_ENUMERATORS:
-            return ICEDiag(IK_NotICE, E->getLocStart());
-         case CXXEnumReflectionQueryExpr::EK_GET_ENUMERATOR_COUNT:
-            return ICEDiag(IK_ICE, E->getLocStart());
-     }
-
   case Expr::InitListExprClass: {
     // C++03 [dcl.init]p13: If T is a scalar type, then a declaration of the
     // form "T x = { a };" is equivalent to "T x = a;".

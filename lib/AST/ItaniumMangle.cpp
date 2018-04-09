@@ -3642,15 +3642,19 @@ recurse:
     mangleExpression(cast<CXXNoexceptExpr>(E)->getOperand());
     break;
 
-  case Expr::CXXReflectExprClass:
-    Out << "rec";
-    mangleName(cast<CXXReflectExpr>(E)->getDecl());
+  case Expr::ReflectionExprClass:
+  case Expr::ReflectionIntrinsicExprClass:
+    {
+      DiagnosticsEngine &Diags = Context.getDiags();
+      unsigned DiagID = Diags.getCustomDiagID(
+          DiagnosticsEngine::Error,
+          "cannot yet mangle expression type %0");
+      Diags.Report(E->getExprLoc(), DiagID)
+              << E->getStmtClassName()
+              << E->getSourceRange();
+      return;
+    }
     break;
-  case Expr::CXXEnumReflectionQueryExprClass:
-    Out << "enrq";
-    mangleName(cast<CXXEnumReflectionQueryExpr>(E)->getDecl());
-    break;
-
   case Expr::UnaryExprOrTypeTraitExprClass: {
     const UnaryExprOrTypeTraitExpr *SAE = cast<UnaryExprOrTypeTraitExpr>(E);
     
@@ -3678,14 +3682,6 @@ recurse:
     case UETT_AlignOf:
       Out << 'a';
       break;
-    case UETT_ReflectExpr: {
-      DiagnosticsEngine &Diags = Context.getDiags();
-      unsigned DiagID = Diags.getCustomDiagID(
-                  DiagnosticsEngine::Level::Error,
-                  "cannot yet mangle reflect_expr expression");
-      Diags.Report(DiagID);
-      return;
-    }
     case UETT_VecStep: {
       DiagnosticsEngine &Diags = Context.getDiags();
       unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,

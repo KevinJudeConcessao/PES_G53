@@ -838,6 +838,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::FunctionParmPackExprClass:
     case Stmt::CoroutineBodyStmtClass:
     case Stmt::CoawaitExprClass:
+    case Stmt::ReflectionExprClass:
+    case Stmt::ReflectionIntrinsicExprClass:
     case Stmt::DependentCoawaitExprClass:
     case Stmt::CoreturnStmtClass:
     case Stmt::CoyieldExprClass:
@@ -1312,11 +1314,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       Bldr.addNodes(Dst);
       break;
     }
-
-    case Expr::CXXEnumReflectionQueryExprClass:
-    case Expr::CXXReflectExprClass:
-      // fix this !!!!
-      break;
 
     case Stmt::InitListExprClass:
       Bldr.takeNodes(Pred);

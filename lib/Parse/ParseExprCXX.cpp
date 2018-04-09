@@ -3259,7 +3259,7 @@ Parser::ParseReflectExprExpression() {
         ParseSpecifierQualifierList(DS);
         ParseDeclarator(DeclaratorInfo);
         if (DeclaratorInfo.isInvalidType()) {
-            Diag(LeftParenthesisLoc, diag::err_reflect_expr_id_not_found) << DeclaratorInfo;
+            Diag(LeftParenthesisLoc, diag::err_reflect_expr_id_not_found) << DeclaratorInfo.getIdentifier();
             return ExprError();
         }
         Actions.ActOnReflectionTypeIdentifier(DeclaratorInfo, Ref);
@@ -3290,5 +3290,5 @@ Parser::ParseReflectionIntrinsicExpression() {
        return ExprError();
     SourceLocation LParenLoc = Tracker.getOpenLocation();
     SourceLocation RParenLoc = Tracker.getCloseLocation();
-    return Actions.ActOnRefletionIntrinsicExpression(KWLocation, LParenLoc, IntrinsicArgs, RParenLoc);
+    return Actions.ActOnReflectionIntrinsicExpression(KWLocation, LParenLoc, IntrinsicArgs, RParenLoc);
 }

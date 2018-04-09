@@ -2934,6 +2934,8 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case ObjCAvailabilityCheckExprClass:
   case CXXUuidofExprClass:
   case OpaqueValueExprClass:
+  case ReflectionExprClass:
+  case ReflectionIntrinsicExprClass:
     // These never have a side-effect.
     return false;
 
@@ -2951,10 +2953,6 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
       break;
     return true;
   }
-
-  case CXXReflectExprClass:
-  case CXXEnumReflectionQueryExprClass:
-      return true;
 
   case BlockExprClass:
   case CXXBindTemporaryExprClass:

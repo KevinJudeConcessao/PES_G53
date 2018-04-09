@@ -1772,11 +1772,11 @@ void StmtProfiler::VisitCoyieldExpr(const CoyieldExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitCXXReflectExpr(const CXXReflectExpr *E) {
+void StmtProfiler::VisitReflectionExpr(const ReflectionExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXEnumReflectionQueryExpr(const CXXEnumReflectionQueryExpr *E) {
+void StmtProfiler::VisitReflectionIntrinsicExpr(const ReflectionIntrinsicExpr *E) {
   VisitExpr(E);
 }
 

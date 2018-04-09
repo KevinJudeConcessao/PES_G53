@@ -248,6 +248,9 @@ def err_unexpected_at : Error<"unexpected '@' in program">;
 def err_atimport : Error<
 "use of '@import' when modules are disabled">;
 
+def err_reflect_expr_id_not_found: Error<
+ "type-id %0 in reflect_expr was not found">;
+
 def err_invalid_reference_qualifier_application : Error<
   "'%0' qualifier may not be applied to a reference">;
 def err_illegal_decl_reference_to_reference : Error<

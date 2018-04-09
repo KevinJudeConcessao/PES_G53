@@ -301,16 +301,10 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CUDAKernelCallExprClass:
     return ClassifyUnnamed(Ctx, cast<CallExpr>(E)->getCallReturnType(Ctx));
 
-  case Expr::CXXReflectExprClass:
+  case Expr::ReflectionExprClass:
+  case Expr::ReflectionIntrinsicExprClass:
      return Cl::CL_ClassTemporary;
-  case Expr::CXXEnumReflectionQueryExprClass:
-     switch (cast<CXXEnumReflectionQueryExpr>(E)->getQueryKind()) {
-        case CXXEnumReflectionQueryExpr::EK_GET_TYPE_NAME:
-        case CXXEnumReflectionQueryExpr::EK_GET_ENUMERATORS:
-            return Cl::CL_ClassTemporary;
-         case CXXEnumReflectionQueryExpr::EK_GET_ENUMERATOR_COUNT:
-            return Cl::CL_PRValue;
-     }
+
 
     // __builtin_choose_expr is equivalent to the chosen expression.
   case Expr::ChooseExprClass:

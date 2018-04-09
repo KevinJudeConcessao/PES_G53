@@ -1711,21 +1711,30 @@ void ASTStmtWriter::VisitTypoExpr(TypoExpr *E) {
 // C++ Static Reflection Support
 //===----------------------------------------------------------------------===//
 
-void ASTStmtWriter::VisitCXXReflectExpr(CXXReflectExpr *E) {
+void ASTStmtWriter::VisitReflectionExpr(ReflectionExpr *E) {
     VisitExpr(E);
     Record.AddSourceLocation(E->getKeywordLoc());
     Record.AddSourceLocation(E->getLocStart());
     Record.AddSourceLocation(E->getLocEnd());
-    Record.AddDeclRef(E->EDecl);
-    Code = serialization::EXPR_CXX_REFLECT_EXPR;
+    Reflection R = E->getReflection();
+    Record.AddAPInt(llvm::APInt(sizeof(ReflectionKind) * 8, R.GetKind()));
+    if (const Decl *D = R.getAsDecl())
+        Record.AddDeclRef(D);
+    else if (const Expr *E = R.getAsExpr())
+        Record.AddStmt(const_cast<Expr*>(E));
+    else if (const Type *Ty = R.getAsType())
+        Record.AddTypeRef(QualType(Ty, 0));
+    Code = serialization::EXPR_REFLECTION_EXPR;
 }
 
-void ASTStmtWriter::VisitCXXEnumReflectionQueryExpr(CXXEnumReflectionQueryExpr *E) {
+void ASTStmtWriter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
     VisitExpr(E);
     Record.AddSourceLocation(E->getKeywordLoc());
+    Record.AddSourceLocation(E->getLocStart());
     Record.AddSourceLocation(E->getLocEnd());
-    Record.AddAPInt(llvm::APInt(sizeof(CXXEnumReflectionQueryExpr::EnumReflectionQueryKind), E->QueryKind));
-    Code = serialization::EXPR_CXX_ENUM_REFLECTION_QUERY_EXPR;
+    Record.AddDeclRef(E->getASTNodePtr());
+    Record.AddAPInt(llvm::APInt(sizeof(ReflectionIntrinsicsID) * 8, E->getIntrinsicID()));
+    Code = serialization::EXPR_REFLECTION_INTRINSIC_EXPR;
 }
 
 //===----------------------------------------------------------------------===//

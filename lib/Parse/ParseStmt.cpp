@@ -2293,7 +2293,9 @@ Parser::ParseClangDiagnosticsStatement() {
     assert(Tok.isOneOf(tok::kw___clang_compiler_error, tok::kw___clang_compiler_warning)
            && "Not a __clang_compiler_error or __clang_compiler_warning token");
     Token Optok = Tok;
+#if 0
     SourceLocation OpLoc = ConsumeToken();
+#endif
     GreaterThanIsOperatorScope GTIO(GreaterThanIsOperator, false);
     SourceLocation LAngleBracketLocation = Tok.getLocation();
     if (ExpectAndConsume(tok::less, diag::err_expected_less_after, Optok.getName()))
@@ -2301,8 +2303,10 @@ Parser::ParseClangDiagnosticsStatement() {
     ExprResult ExprRes = ParseExpression();
     if (ExpectAndConsume(tok::greater))
         return StmtError(Diag(LAngleBracketLocation, diag::note_matching) << tok::less);
+#if 0
     SourceLocation RAngleBracketLocation = Tok.getLocation();
     SourceLocation LParenLocation, RParenLocation;
+#endif
     BalancedDelimiterTracker Tracker(*this, tok::l_paren);
     if (Tracker.expectAndConsume(diag::err_expected_lparen_after, ""))
         return StmtError();

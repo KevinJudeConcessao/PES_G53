@@ -4214,7 +4214,7 @@ public:
   /* C++ Reflection Support */
   bool ActOnReflectionScopedIdentifier(CXXScopeSpec &ScopeSpec, IdentifierInfo *II,
                                        SourceLocation IDLocation, Reflection &Ref);
-  bool ActOnReflectionTypeIdentifier(const Declarator &D, Reflection &Ref);
+  bool ActOnReflectionTypeIdentifier(Declarator &D, Reflection &Ref);
   ExprResult ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LParenLocation,
                                         Reflection &Ref, SourceLocation RParenLocation);
   ExprResult BuildReflectExprExpression();
@@ -4505,12 +4505,12 @@ public:
   NamespaceDecl *lookupStdExperimentalNamespace();
   NamespaceDecl *lookupStdReflectionNamespace();
   QualType BuildStdTuple(TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc);
-  QualType BuildReflectionObjectType(const StringRef &TargetMeta, const TemplateArgument &IntTemplateArg,
+  QualType BuildReflectionObjectType(const StringRef &TargetMeta, TemplateArgument IntTemplateArg,
                                      SourceLocation Loc);
   QualType getReflectExprTypeforDecl(const Decl *DeclPtr, SourceLocation Loc);
   QualType getInvalidReflectExprTypeForDecl(SourceLocation Loc);
   ExprResult CreateStringViewObject(StringRef String, SourceLocation Loc);
-  ExprResult CreateTupleObject(QualType Ty, MultiExprArg Args, SourceLocation Loc);
+  ExprResult CreateTupleObject(QualType Ty, llvm::MutableArrayRef<Expr*> Args, SourceLocation Loc);
   ExprResult CreateMetaDeclObject(QualType MetaDeclObjectType, SourceLocation Loc);
   CXXRecordDecl *getStdStringView(SourceLocation Loc);
 

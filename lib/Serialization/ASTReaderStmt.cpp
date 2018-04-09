@@ -1676,12 +1676,14 @@ void ASTStmtReader::VisitTypoExpr(TypoExpr *E) {
 // C++ Static Reflection support
 //===----------------------------------------------------------------------===//
 
-void ASTStmtReader::VisitCXXReflectExpr(CXXReflectExpr *E) {
-    VisitExpr(E);
+void ASTStmtReader::VisitReflectionExpr(ReflectionExpr *E) {
+    // FIXME: Implement static reflection serialization.
+    llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitCXXEnumReflectionQueryExpr(CXXEnumReflectionQueryExpr *E) {
-   VisitExpr(E);
+void ASTStmtReader::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
+   // FIXME: Implement static reflection serialization.
+   llvm_unreachable("unimplemented");
 }
 
 //===----------------------------------------------------------------------===//
@@ -3194,11 +3196,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) CallExpr(Context, Stmt::CallExprClass, Empty);
       break;
 
-    case EXPR_CXX_REFLECT_EXPR:
-      S = new (Context) CXXReflectExpr(Empty);
+    case EXPR_REFLECTION_EXPR:
+      S = new (Context) ReflectionExpr(Empty);
       break;
-    case EXPR_CXX_ENUM_REFLECTION_QUERY_EXPR:
-      S = new (Context) CXXEnumReflectionQueryExpr(Empty);
+    case EXPR_REFLECTION_INTRINSIC_EXPR:
+      S = new (Context) ReflectionIntrinsicExpr(Empty);
       break;
 
     case EXPR_MEMBER: {

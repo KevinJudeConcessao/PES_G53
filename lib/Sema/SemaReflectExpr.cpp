@@ -189,11 +189,12 @@ Sema::getStdStringView(SourceLocation Loc) {
 }
 
 QualType
-Sema::BuildReflectionObjectType(const StringRef &TargetMeta, const TemplateArgument &IntTemplateArg, SourceLocation Loc) {
+Sema::BuildReflectionObjectType(const StringRef &TargetMeta, TemplateArgument IntTemplateArg, SourceLocation Loc) {
+    assert(IntTemplateArg.getKind() == TemplateArgument::Integral && "template argument not of integral type !!");
     ClassTemplateDecl *TargetTemplateDecl = LookupStdReflectionDecl(*this, TargetMeta, Loc);
-    TemplateArgumentListInfo ArgsInfo;
-    ArgsInfo.addArgument(TemplateArgumentLoc(IntTemplateArg, {}));
-    return SpecializeClassTemplate(*this, TargetTemplateDecl, ArgsInfo, Loc);
+    TemplateArgumentListInfo ArgInfo(Loc, Loc);
+    ArgInfo.addArgument(TemplateArgumentLoc(IntTemplateArg, TemplateArgumentLocInfo()));
+    return SpecializeClassTemplate(*this, TargetTemplateDecl, &ArgInfo, Loc);
 }
 
 QualType
@@ -247,15 +248,15 @@ Sema::CreateStringViewObject(StringRef String, SourceLocation Loc) {
 }
 
 ExprResult
-Sema::CreateTupleObject(QualType Ty, MultiExprArg Args, SourceLocation Loc) {
+Sema::CreateTupleObject(QualType Ty, llvm::MutableArrayRef<Expr *> Args, SourceLocation Loc) {
     TemplateArgumentListInfo TemplateArgs(Loc, Loc);
     SmallVector<Expr*, 8> Arguments;
     for (Expr *E : Args) {
-        TemplateArgs.addArgument(TemplateArgumentLoc(TemplateArgument(E->getType()), S.Context.CreateTypeSourceInfo(E->getType())));
+        TemplateArgs.addArgument(TemplateArgumentLoc(TemplateArgument(E->getType()), Context.CreateTypeSourceInfo(E->getType())));
         Expr *AddedExpr = E;
         if (!llvm::isa<MaterializeTemporaryExpr>(E)) {
             if (!E->isGLValue())
-                AddedExpr = S.CreateMaterializeTemporaryExpr(E->getType(), E, !(E->isRValue() || E->isXValue()));
+                AddedExpr = CreateMaterializeTemporaryExpr(E->getType(), E, !(E->isRValue() || E->isXValue()));
         }
         Arguments.push_back(AddedExpr);
     }
@@ -264,10 +265,10 @@ Sema::CreateTupleObject(QualType Ty, MultiExprArg Args, SourceLocation Loc) {
     OverloadCandidateSet CtorCandidateSet(SourceLocation(), OverloadCandidateSet::CandidateSetKind::CSK_Normal);
     for (NamedDecl *D : LookupConstructors(StdTupleSpecDecl)) {
         if (FunctionDecl *FDecl = llvm::dyn_cast<FunctionDecl>(D)) {
-            S.AddOverloadCandidate(FDecl, DeclAccessPair::make(FDecl, FDecl->getAccess()), Args, CtorCandidateSet);
+            AddOverloadCandidate(FDecl, DeclAccessPair::make(FDecl, FDecl->getAccess()), Args, CtorCandidateSet);
         }
         else if (FunctionTemplateDecl *FTDecl = llvm::dyn_cast<FunctionTemplateDecl>(D)) {
-            S.AddTemplateOverloadCandidate(FTDecl, DeclAccessPair::make(FTDecl, FTDecl->getAccess()),
+            AddTemplateOverloadCandidate(FTDecl, DeclAccessPair::make(FTDecl, FTDecl->getAccess()),
                                            &TemplateArgs, Args, CtorCandidateSet);
         }
     }
@@ -277,7 +278,7 @@ Sema::CreateTupleObject(QualType Ty, MultiExprArg Args, SourceLocation Loc) {
     CXXConstructorDecl *CtorDecl = nullptr;
     if (BestResultPtr->Function)
         CtorDecl = llvm::dyn_cast<CXXConstructorDecl>(BestResultPtr->Function);
-    TypeSourceInfo* TInfo = S.Context.CreateTypeSourceInfo(StdTupleTy);
+    TypeSourceInfo* TInfo = Context.CreateTypeSourceInfo(StdTupleTy);
     llvm::SmallVector<Expr*, 8> FinalConverted;
     CompleteConstructorCall(CtorDecl, Args, Loc, FinalConverted, true);
     MarkFunctionReferenced(CtorDecl->getLocation(), CtorDecl);
@@ -328,7 +329,7 @@ Sema::ActOnReflectionScopedIdentifier(CXXScopeSpec &ScopeSpec, IdentifierInfo *I
             DiagID = diag::err_reflect_expr_id_found_overloaded;
             break;
         case LookupResult::NotFound:
-            DiagID = diag::err_reflect_expr_id_not_found;
+            DiagID = diag::err_reflect_expr_type_id_not_found;
             break;
         }
         Diag(IDLocation, DiagID) << II;
@@ -339,13 +340,13 @@ Sema::ActOnReflectionScopedIdentifier(CXXScopeSpec &ScopeSpec, IdentifierInfo *I
 }
 
 bool
-Sema::ActOnReflectionTypeIdentifier(const Declarator &D, Reflection &Ref) {
+Sema::ActOnReflectionTypeIdentifier(Declarator &D, Reflection &Ref) {
     TypeSourceInfo *TInfo = GetTypeForDeclarator(D, getCurScope());
-    Type *TyPtr = (TInfo->getType()).getTypePtr();
+    const Type *TyPtr = (TInfo->getType()).getTypePtr();
     Decl *DeclPtr = nullptr;
     /* For our demonstration, we choose decls such as classes, enums, structs, and namespaces
      * getAsTagDecl() will fail if TyPtr refers to functions, arrays, pointers, built-in types, etc */
-    Ref = ((DeclPtr = TyPtr->getAsTagDecl()) ? Reflection(DeclPtr) : Reflection(TyPtr));
+    Ref = ((DeclPtr = TyPtr->getAsTagDecl()) ? Reflection(DeclPtr) : Reflection(QualType(TyPtr, 0)));
     return true;
 }
 
@@ -395,7 +396,7 @@ Sema::ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LPare
     } else if (const Decl *D = Ref.getAsDecl()) {
         /* Handle items such as fields, enum constants, and methods/constructors/destructors */
         if (const ValueDecl *VDecl = llvm::dyn_cast<ValueDecl>(D)) {
-            DeclRefExpr *DRExpr = new (Context) DeclRefExpr(VDecl, /*RefersToEnclosingVariableOrCapture=*/ false,
+            DeclRefExpr *DRExpr = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VDecl), /*RefersToEnclosingVariableOrCapture=*/ false,
                                                             VDecl->getType(), ExprValueKind::VK_RValue, KWLocation);
             IsTypeDependent = DRExpr->isValueDependent();
             IsValueDependent = DRExpr->isValueDependent();
@@ -415,7 +416,7 @@ Sema::ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LPare
              * DO NOTHING !!! */
         }
     }
-    QualType Ty = getReflectExprTypeForDecl(*this, DeclPtr, KWLocation);
+    QualType Ty = getReflectExprTypeforDecl(DeclPtr, KWLocation);
     return new (Context) ReflectionExpr(KWLocation, LParenLocation, RParenLocation, Ref, Ty,
                                         IsTypeDependent, IsValueDependent, IsInstantiationDependent,
                                         ContainsUnexpandedParameterPack);
@@ -425,11 +426,12 @@ ExprResult
 Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
                                         ArrayRef<Expr*> IntrinsicArgs, SourceLocation RParenLoc) {
     QualType ResultTy;
+    llvm::APSInt IntrinsicID;
+    IntrinsicArgs[1]->EvaluateAsInt(IntrinsicID, Context);
     switch (static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue())) {
         default:
             llvm_unreachable("Unknown reflection intrinsic ID");
         case RI_Name:
-        case RI_TypeName:
             ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
             break;
         case RI_ParentDecl:
@@ -450,18 +452,19 @@ Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LP
             ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
             break;
         case RI_SourceFileStart:
-        case RI_SourceFileEnd:
-            TemplateArgumentListInfo ArgInfo;
-            ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(Context.IntTy),
-                                                    Context.getTrivialTypeSourceInfo(Context.IntTy)));
-            ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(Context.IntTy),
-                                                    Context.getTrivialTypeSourceInfo(Context.IntTy)));
-            ResultTy = BuildStdTuple(&ArgInfo, KWLoc);
+        case RI_SourceFileEnd: {
+                TemplateArgumentListInfo ArgInfo;
+                ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(Context.IntTy),
+                                                        Context.getTrivialTypeSourceInfo(Context.IntTy)));
+                ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(Context.IntTy),
+                                                        Context.getTrivialTypeSourceInfo(Context.IntTy)));
+                ResultTy = BuildStdTuple(&ArgInfo, KWLoc);
+            }
             break;
         case RI_EnumSize:
         case RI_EnumConstantValue:
             ResultTy = Context.IntTy;
             break;
     }
-    return new (Context) ReflectionIntrinsicExpr(KWLoc, LParenLoc, RParenLoc, IntrinsicArgs, Ty);
+    return new (Context) ReflectionIntrinsicExpr(Context, KWLoc, LParenLoc, RParenLoc, IntrinsicArgs, ResultTy);
 }
