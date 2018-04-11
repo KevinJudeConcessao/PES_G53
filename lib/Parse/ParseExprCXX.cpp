@@ -3243,6 +3243,7 @@ Parser::ParseReflectExprExpression() {
     CXXScopeSpec ScopeSpec;
     IdentifierInfo *LastIdent;
     BalancedDelimiterTracker Tracker(*this, tok::l_paren);
+    Tracker.consumeOpen();
     /* Consume all the tokens till the last :: */
     ParseOptionalCXXScopeSpecifier(ScopeSpec, ParsedType(), /*EnteringContext=*/ false,/*MayBePseudoDtor*/ nullptr, /*IsTypename*/ true);
     if (ScopeSpec.isValid() && Tok.is(tok::identifier)) {
@@ -3253,22 +3254,23 @@ Parser::ParseReflectExprExpression() {
     }
     else if (isTypeIdUnambiguously()) {
         DeclSpec DS(AttrFactory);
-        Declarator DeclaratorInfo(DS, Declarator::TheContext::TypeNameContext);
-        Tracker.consumeOpen();
-        LeftParenthesisLoc = Tracker.getOpenLocation();
         ParseSpecifierQualifierList(DS);
+        Declarator DeclaratorInfo(DS, Declarator::TheContext::TypeNameContext);
+        LeftParenthesisLoc = Tracker.getOpenLocation();
         ParseDeclarator(DeclaratorInfo);
         if (DeclaratorInfo.isInvalidType()) {
-            Diag(LeftParenthesisLoc, diag::err_reflect_expr_id_not_found) << DeclaratorInfo.getIdentifier();
+            Diag(LeftParenthesisLoc, diag::err_reflect_expr_id_not_found)
+                    << DeclaratorInfo.getIdentifier();
             return ExprError();
         }
-        Actions.ActOnReflectionTypeIdentifier(DeclaratorInfo, Ref);
+        if (!Actions.ActOnReflectionTypeIdentifier(DeclaratorInfo, Ref))
+            return ExprError();
     }
     if (Tracker.consumeClose()) {
         Diag(diag::err_expected_rparen_after) << "type-id in reflect_expr";
         return ExprError();
     }
-    RightParenthesisLoc = Tracker.getCloseLocation();
+    RightParenthesisLoc = Tracker.getCloseLocation();;
     return Actions.ActOnReflectExprExpression(KWLoc, LeftParenthesisLoc, Ref, RightParenthesisLoc);
 }
 

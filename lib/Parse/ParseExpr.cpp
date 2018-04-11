@@ -1165,9 +1165,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseUnaryExprOrTypeTraitExpression();
 
   case tok::kw_reflect_expr:
-    return ParseReflectExprExpression();
+    Res = ParseReflectExprExpression();
+    break;
   case tok::kw___reflection_intrinsic:
-    return ParseReflectionIntrinsicExpression();
+    Res = ParseReflectionIntrinsicExpression();
+    break;
 
   case tok::ampamp: {      // unary-expression: '&&' identifier
     SourceLocation AmpAmpLoc = ConsumeToken();

@@ -4310,11 +4310,11 @@ public:
     ReflectionExpr(SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation, Reflection R,
                    QualType T, bool TypeDependent, bool ValueDependent, bool InstantiationDependent, bool UnexpandedParameterPack)
         :Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary, TypeDependent, ValueDependent, InstantiationDependent, UnexpandedParameterPack),
-          KeywordLocation(KeywordLocation), LParenLocation(LParenLocation), RParenLocation(RParenLocation) {}
+          KeywordLocation(KeywordLocation), LParenLocation(LParenLocation), RParenLocation(RParenLocation), R(R) {}
     ReflectionExpr(EmptyShell Empty)
         :Expr(ReflectionExprClass, Empty) {}
     SourceLocation getKeywordLoc() const LLVM_READONLY {  return KeywordLocation;  }
-    SourceLocation getLocStart()   const LLVM_READONLY {  return LParenLocation;   }
+    SourceLocation getLocStart()   const LLVM_READONLY {  return KeywordLocation;   } // correct it to LParenLoc
     SourceLocation getLocEnd()     const LLVM_READONLY {  return RParenLocation;   }
     Reflection getReflection()     const LLVM_READONLY {  return R; }
     static bool classof(const Stmt *T) {
@@ -4335,22 +4335,17 @@ private:
     SourceLocation KeywordLocation;
     SourceLocation LParenLocation;
     SourceLocation RParenLocation;
-    using PtrIntPair = std::pair<Decl*, ReflectionIntrinsicsID>;
-    ArrayRef<Expr *> ArgsList;
-    PtrIntPair Args;
+    using PtrIDPair = std::pair<const Decl*, ReflectionIntrinsicsID>;
+    Expr** ArgsList;
+    PtrIDPair Args;
 public:
     ReflectionIntrinsicExpr(ASTContext &Context, SourceLocation KeywordLocation, SourceLocation LParenLocation, SourceLocation RParenLocation,
                             ArrayRef<Expr *> IntrinsicArgs, QualType Ty)
-        : Expr(ReflectionIntrinsicExprClass, Ty, VK_RValue, OK_Ordinary, /*TypeDependent=*/ false, /*ValueDependent=*/ true,
+        : Expr(ReflectionIntrinsicExprClass, Ty, VK_RValue, OK_Ordinary, /*TypeDependent=*/ Ty == Context.DependentTy, /*ValueDependent=*/ true,
                /*InstantiationDependent=*/ false, /*UnexpandedParameterPack=*/ false),
           KeywordLocation(KeywordLocation), LParenLocation(LParenLocation),RParenLocation(RParenLocation),
-          ArgsList(IntrinsicArgs), Args() {
-        Expr *DeclPtrExpr = IntrinsicArgs[0];
-        Expr *IntrinsicIDExpr = IntrinsicArgs[1];
-        llvm::APSInt DeclPtr, IntrinsicID;
-        assert(DeclPtrExpr->EvaluateAsInt(DeclPtr, Context) && "Could not evaluate DeclPtrExpr as integer");
-        assert(IntrinsicIDExpr->EvaluateAsInt(IntrinsicID, Context) && "Could not evaluate IntrinsicIDExpr as integer");
-        Args = std::make_pair(reinterpret_cast<Decl*>(DeclPtr.getExtValue()), static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue()));
+          ArgsList(new Expr*[IntrinsicArgs.size()]), Args() {
+        std::copy(IntrinsicArgs.begin(), IntrinsicArgs.end(), ArgsList);
     }
     ReflectionIntrinsicExpr(EmptyShell Empty)
         :Expr(ReflectionIntrinsicExprClass, Empty) {}
@@ -4359,7 +4354,10 @@ public:
     SourceLocation getLocEnd()     const LLVM_READONLY {  return RParenLocation;   }
     const Decl* getASTNodePtr()   const LLVM_READONLY  {  return Args.first; }
     ReflectionIntrinsicsID getIntrinsicID()  const LLVM_READONLY {  return Args.second;  }
-    ArrayRef<Expr*> getExprArgs() const { return ArgsList; }
+    Expr** getExprArgs() const { return ArgsList; }
+    void setPtrIDPair(const Decl *D, ReflectionIntrinsicsID ID) {
+        Args = std::make_pair(D, ID);
+    }
     child_range children() {
         return child_range(child_iterator(), child_iterator());
     }
@@ -4369,6 +4367,7 @@ public:
     static bool classof(const Stmt *T) {
         return T->getStmtClass() == ReflectionIntrinsicExprClass;
     }
+    ~ReflectionIntrinsicExpr() { delete[] ArgsList; }
     friend class ASTStmtReader;
     friend class ASTStmtWriter;
 };

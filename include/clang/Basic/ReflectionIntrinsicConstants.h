@@ -2,6 +2,7 @@
 #define LLVM_CLANG_BASIC_REFLECTIONINTRINSICCONSTANTS_H
 
 enum ReflectionIntrinsicsID {
+    RI_Invalid,
     // constants for all decls
     RI_Name,
     RI_ParentDecl,

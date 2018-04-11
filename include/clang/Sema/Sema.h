@@ -4216,10 +4216,10 @@ public:
                                        SourceLocation IDLocation, Reflection &Ref);
   bool ActOnReflectionTypeIdentifier(Declarator &D, Reflection &Ref);
   ExprResult ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LParenLocation,
-                                        Reflection &Ref, SourceLocation RParenLocation);
+                                        Reflection Ref, SourceLocation RParenLocation);
   ExprResult BuildReflectExprExpression();
   ExprResult ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
-                                                ArrayRef<Expr*> IntrinsicArgs, SourceLocation RParenLoc);
+                                                SmallVector<Expr*, 2> IntrinsicArgs, SourceLocation RParenLoc);
   ExprResult BuildReflectionIntrinsicExpression();
 
   // This struct is for use by ActOnMemberAccess to allow

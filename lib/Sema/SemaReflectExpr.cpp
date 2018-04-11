@@ -169,7 +169,7 @@ LookupStdStringView(Sema &S, SourceLocation Loc) {
         S.Diag(Loc, diag::err_implied_std_string_view_not_found);
         return nullptr;
     }
-    LookupResult StdStringViewResult(S, &S.PP.getIdentifierTable().get("string_view"), Loc,
+    LookupResult StdStringViewResult(S, &S.PP.getIdentifierTable().get("string"), Loc,
                                      Sema::LookupNameKind::LookupTagName);
     if (!S.LookupQualifiedName(StdStringViewResult, StdNamespaceDecl)) {
         S.Diag(Loc, diag::err_implied_std_string_view_not_found);
@@ -380,19 +380,34 @@ Sema::getInvalidReflectExprTypeForDecl(SourceLocation Loc) {
     return BuildReflectionObjectType(TargetClassType, PtrArg, Loc);
 }
 
+namespace {
+class TransformReflection : public TreeTransform<TransformReflection> {
+   public:
+    TransformReflection(Sema &SemaRef) : TreeTransform<TransformReflection>(SemaRef) {}
+    bool AlwaysRebuild() { return true; }
+    ExprResult TransformReflectionExpr(ReflectionExpr *E) {
+        return TreeTransform<TransformReflection>::TransformReflectionExpr(E);
+    }
+    ExprResult TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
+        return TreeTransform<TransformReflection>::TransformReflectionIntrinsicExpr(E);
+    }
+};
+}
+
 ExprResult
 Sema::ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LParenLocation,
-                                 Reflection &Ref, SourceLocation RParenLocation) {
+                                 Reflection Ref, SourceLocation RParenLocation) {
     bool IsTypeDependent = false, IsValueDependent = false;
     bool IsInstantiationDependent = false, ContainsUnexpandedParameterPack = false;
     Decl *DeclPtr = nullptr;
+    QualType ResultType;
     if (const Type *TyPtr = Ref.getAsType()) {
         /* written for the sake of completeness */
         IsTypeDependent = TyPtr->isDependentType();
         IsValueDependent = TyPtr->isDependentType();
         IsInstantiationDependent = TyPtr->isInstantiationDependentType();
         ContainsUnexpandedParameterPack = TyPtr->containsUnexpandedParameterPack();
-        llvm_unreachable ("Incomplete implementation. Contact the developer !!");
+        ResultType = Context.DependentTy;
     } else if (const Decl *D = Ref.getAsDecl()) {
         /* Handle items such as fields, enum constants, and methods/constructors/destructors */
         if (const ValueDecl *VDecl = llvm::dyn_cast<ValueDecl>(D)) {
@@ -415,19 +430,29 @@ Sema::ActOnReflectExprExpression(SourceLocation KWLocation, SourceLocation LPare
              * Expression dependencies are rightfully false at this point.
              * DO NOTHING !!! */
         }
+        DeclPtr = const_cast<Decl*>(D);
+        ResultType = getReflectExprTypeforDecl(DeclPtr, KWLocation);
     }
-    QualType Ty = getReflectExprTypeforDecl(DeclPtr, KWLocation);
-    return new (Context) ReflectionExpr(KWLocation, LParenLocation, RParenLocation, Ref, Ty,
+    return new (Context) ReflectionExpr(KWLocation, LParenLocation, RParenLocation, Ref, ResultType,
                                         IsTypeDependent, IsValueDependent, IsInstantiationDependent,
                                         ContainsUnexpandedParameterPack);
 }
 
 ExprResult
 Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
-                                        ArrayRef<Expr*> IntrinsicArgs, SourceLocation RParenLoc) {
+                                        llvm::SmallVector<Expr*, 2> IntrinsicArgs, SourceLocation RParenLoc) {
     QualType ResultTy;
     llvm::APSInt IntrinsicID;
-    IntrinsicArgs[1]->EvaluateAsInt(IntrinsicID, Context);
+    SmallVector<Expr*, 2> TransformedArgs;
+    for (Expr* Arg: IntrinsicArgs) {
+        Expr *TransformedArg = Arg;
+        if (TransformedArg->isGLValue()) {
+            TransformedArg = ImplicitCastExpr::Create(Context, TransformedArg->getType(), CastKind::CK_LValueToRValue,
+                                                      TransformedArg, nullptr, VK_RValue);
+        }
+        TransformedArgs.push_back(TransformedArg);
+    }
+    TransformedArgs[0]->EvaluateAsInt(IntrinsicID, Context);
     switch (static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue())) {
         default:
             llvm_unreachable("Unknown reflection intrinsic ID");
@@ -466,5 +491,6 @@ Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LP
             ResultTy = Context.IntTy;
             break;
     }
-    return new (Context) ReflectionIntrinsicExpr(Context, KWLoc, LParenLoc, RParenLoc, IntrinsicArgs, ResultTy);
+    return new (Context) ReflectionIntrinsicExpr(Context, KWLoc, LParenLoc, RParenLoc, TransformedArgs, ResultTy);
+
 }

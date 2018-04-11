@@ -234,6 +234,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::DependentCoawaitExprClass:
   case Stmt::CoreturnStmtClass:
   case Stmt::CoyieldExprClass:
+  case Stmt::ReflectionExprClass:
+  case Stmt::ReflectionIntrinsicExprClass:
   case Stmt::CXXBindTemporaryExprClass:
   case Stmt::CXXDefaultArgExprClass:
   case Stmt::CXXDefaultInitExprClass:

@@ -9823,16 +9823,6 @@ static bool EvaluateVoid(const Expr *E, EvalInfo &Info) {
 }
 
 //===----------------------------------------------------------------------===//
-// CXX Reflection intrinsics evaluation
-//===----------------------------------------------------------------------===//
-namespace {
-class ReflectionInttrinsicExpr
-  : public ExprEvaluatorBase<ReflectionIntrinsicExpr> {
-
-};
-} // end anonymouss namespace
-
-//===----------------------------------------------------------------------===//
 // Top level Expr::EvaluateAsRValue method.
 //===----------------------------------------------------------------------===//
 

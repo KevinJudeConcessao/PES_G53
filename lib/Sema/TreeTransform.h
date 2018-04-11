@@ -2711,113 +2711,92 @@ public:
 
   ExprResult RebuildReflectionExpr(SourceLocation StartLoc, SourceLocation EndLoc, Reflection &Ref) {
     QualType TargetObjectType;
-    if (const Decl *D = Ref.getAsDecl())
+    if (const Decl *D = Ref.getAsDecl()) {
         TargetObjectType = getSema().getReflectExprTypeforDecl(D, StartLoc);
+    }
     if (TargetObjectType.isNull())
-        TargetObjectType = getSema().getInvalidReflectExprTypeForDecl(StartLoc);
-    CXXConstructorDecl *TargetObjectCtor = getSema().LookupDefaultConstructor(
-                TargetObjectType.getTypePtr()->getAsCXXRecordDecl());
-    getSema().MarkFunctionReferenced(StartLoc, TargetObjectCtor);
-    ExprResult Res = getSema().BuildCXXConstructExpr(StartLoc, TargetObjectType, TargetObjectCtor,
-                                           /*Elidable=*/ true, {},
-                                           /*HasMultipleCandidates=*/  false,
-                                           /*ListInitialization=*/     false,
-                                           /*StdListInitialization=*/  false,
-                                           /*ZeroInitialization=*/     true,
-                                           CXXConstructExpr::CK_Complete,
-                                           SourceRange(StartLoc, EndLoc));
-    return getSema().MaybeBindToTemporary(llvm::dyn_cast<CXXConstructExpr>(Res.get()));
-
+        TargetObjectType = getSema().getInvalidReflectExprTypeForDecl(EndLoc);
+    return getSema().CreateMetaDeclObject(TargetObjectType, StartLoc);
   }
 
-  ExprResult RebuildReflectionIntrinsicExpr(SourceLocation KWLoc, SourceLocation LParenLoc,
-                                            ArrayRef<Expr*> IntrinsicArgs, SourceLocation RParenLoc, QualType Ty) {
-      ReflectionIntrinsicExpr *E = new (getSema().Context) ReflectionIntrinsicExpr(getSema().Context,
-                                                                                   KWLoc, LParenLoc, RParenLoc,
-                                                                                   IntrinsicArgs, Ty);
-      ReflectionIntrinsicsID ID = E->getIntrinsicID();
-      const Decl *D = E->getASTNodePtr();
+  ExprResult RebuildReflectionIntrinsicExpr(SourceLocation KWLoc, llvm::APSInt &DeclPtr,
+                                            llvm::APSInt &IntrinsicID, QualType Ty) {
+      const Decl *D = reinterpret_cast<Decl*>(DeclPtr.getExtValue());
+      ReflectionIntrinsicsID ID = static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue());
       FullSourceLoc StartLoc(D->getLocStart(), getSema().getSourceManager());
       FullSourceLoc EndLoc(D->getLocEnd(), getSema().getSourceManager());
-      CXXTemporaryObjectExpr *Temp = nullptr;
       Expr *LineNumber = nullptr;
       Expr *ColumnNumber = nullptr;
       ExprResult Result;
       switch (ID) {
-        case RI_Name:
-          if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D)) {
-              Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateStringViewObject(NDecl->getName(), E->getLocStart()).get());
-              Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
-          }
+      case RI_Name:
+          if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D))
+              Result = getSema().CreateStringViewObject(NDecl->getName(), KWLoc);
+          else
+              Result = ExprError();
           break;
-        case RI_ParentDecl:
-        case RI_LexicalParentDecl:
-        case RI_PreviousDecl:
-        case RI_NextDecl:
-          Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateMetaDeclObject(Ty, E->getLocStart()).get());
-          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+      case RI_ParentDecl:
+      case RI_LexicalParentDecl:
+      case RI_PreviousDecl:
+      case RI_NextDecl:
+          Result = getSema().CreateMetaDeclObject(Ty, KWLoc);
           break;
-        case RI_IsComplete:
+      case RI_IsComplete:
           Result = new (getSema().Context) CXXBoolLiteralExpr(D->getCanonicalDecl() ?
-                                                              true : false, getSema().Context.IntTy, E->getLocStart());
+                                                                  true : false, getSema().Context.IntTy, KWLoc);
           break;
-        case RI_SourceFileName: {
+      case RI_SourceFileName: {
           const FileEntry *Entry = StartLoc.getFileEntry();
-          Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateStringViewObject(Entry->getName(), E->getLocStart()).get());
-          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+          Result = getSema().CreateStringViewObject(Entry->getName(), KWLoc);
         }
-        break;
-        case RI_SourceFileStart: {
-              LineNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, StartLoc.getLineNumber()),
-                                                        getSema().Context.IntTy, E->getLocStart());
-              ColumnNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, StartLoc.getColumnNumber()),
-                                                        getSema().Context.IntTy, E->getLocStart());
-              std::array<Expr*, 2> Location = {{ LineNumber, ColumnNumber }};
-              Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateTupleObject(Ty, Location, E->getLocStart()).get());
-              Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
-          }
           break;
-        case RI_SourceFileEnd: {
-              LineNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, EndLoc.getLineNumber()),
-                                                        getSema().Context.IntTy, E->getLocStart());
-              ColumnNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, EndLoc.getColumnNumber()),
-                                                        getSema().Context.IntTy, E->getLocStart());
-              std::array<Expr*, 2> Location =  {{ LineNumber, ColumnNumber }};
-              Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateTupleObject(Ty, Location, E->getLocStart()).get());
-              Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
-          }
+      case RI_SourceFileStart: {
+          LineNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, StartLoc.getLineNumber()),
+                                              getSema().Context.IntTy, KWLoc);
+          ColumnNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, StartLoc.getColumnNumber()),
+                                                getSema().Context.IntTy, KWLoc);
+          std::array<Expr*, 2> SourceLoc = {{ LineNumber, ColumnNumber }};
+          Result = getSema().CreateTupleObject(Ty, SourceLoc, KWLoc).get();
+      }
           break;
-        case RI_Begin:
-        case RI_End:
-          Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateMetaDeclObject(Ty, E->getLocStart()).get());
-          Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+      case RI_SourceFileEnd: {
+          LineNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, EndLoc.getLineNumber()),
+                                              getSema().Context.IntTy, KWLoc);
+          ColumnNumber = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, EndLoc.getColumnNumber()),
+                                                getSema().Context.IntTy, KWLoc);
+          std::array<Expr*, 2> SourceLoc =  {{ LineNumber, ColumnNumber }};
+          Result = getSema().CreateTupleObject(Ty, SourceLoc, KWLoc);
+      }
           break;
-        case RI_Enumerators:
+      case RI_Begin:
+      case RI_End:
+          Result = getSema().CreateMetaDeclObject(Ty, KWLoc);
+          break;
+      case RI_Enumerators:
           if (const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D)) {
               llvm::SmallVector<Expr*, 8> Enumerators;
               for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
                    first != last; ++first) {
-                  QualType EnumeratorTy = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
-                  Enumerators.push_back(getSema().CreateMetaDeclObject(EnumeratorTy, E->getLocStart()).get());
+                  QualType EnumeratorTy = getSema().getReflectExprTypeforDecl(*first, KWLoc);
+                  Enumerators.push_back(getSema().CreateMetaDeclObject(EnumeratorTy, KWLoc).get());
               }
-              Temp = llvm::dyn_cast<CXXTemporaryObjectExpr>(getSema().CreateTupleObject(Ty, Enumerators, E->getLocStart()).get());
-              Result = getDerived().TransformCXXTemporaryObjectExpr(Temp);
+              Result = getSema().CreateTupleObject(Ty, Enumerators, KWLoc);
           }
           break;
-        case RI_EnumSize:
+      case RI_EnumSize:
           if (const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D)) {
               EnumDecl::enumerator_iterator first = EDecl->enumerator_begin();
               EnumDecl::enumerator_iterator last  = EDecl->enumerator_end();
               Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, std::distance(first, last)),
-                                              getSema().Context.IntTy, E->getLocStart());
+                                              getSema().Context.IntTy, KWLoc);
           }
           break;
-        case RI_EnumConstantValue:
+      case RI_EnumConstantValue:
           if (const EnumConstantDecl *ECDecl = llvm::dyn_cast<EnumConstantDecl>(D)) {
-              Result = IntegerLiteral::Create(getSema().Context, ECDecl->getInitVal(), getSema().Context.IntTy, E->getLocStart());
+              Result = IntegerLiteral::Create(getSema().Context, ECDecl->getInitVal(), getSema().Context.IntTy, KWLoc);
           }
           break;
-        default:
+      default:
           llvm_unreachable("Unknown reflection intrinsic !!!");
       }
       return Result;
@@ -3405,7 +3384,6 @@ template<typename Derived>
 ExprResult TreeTransform<Derived>::TransformExpr(Expr *E) {
   if (!E)
     return E;
-
   switch (E->getStmtClass()) {
     case Stmt::NoStmtClass: break;
 #define STMT(Node, Parent) case Stmt::Node##Class: break;
@@ -7156,6 +7134,133 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
   return getDerived().RebuildCoyieldExpr(E->getKeywordLoc(), Result.get());
 }
 
+// C++ Reflection TS
+template<typename Derived>
+static void HandleReflectedDeclTransform(Derived &Der, const Sema &SemaRef, Decl* D, Reflection &Ref) {
+    if (const ValueDecl *VDecl = llvm::dyn_cast<ValueDecl>(D)) {
+        DeclRefExpr *DRE = new (SemaRef.Context) DeclRefExpr(const_cast<ValueDecl*>(VDecl),
+                                                               /*RefersToEnclosingVariableOrCapture=*/ false,
+                                                               VDecl->getType(), ExprValueKind::VK_RValue,
+                                                               VDecl->getLocation());
+        ExprResult Res = Der.TransformExpr(DRE);
+        if (Res.isInvalid())
+            Ref = Reflection();
+        Ref = Reflection(Res.getAs<DeclRefExpr>()->getDecl());
+    } else if (const TypeDecl *TDecl = llvm::dyn_cast<TypeDecl>(D)) {
+        QualType Ty = SemaRef.getASTContext().getTypeDeclType(TDecl);
+        QualType TransformedTy = Der.TransformType(Ty);
+        if (TransformedTy.isNull())
+            Ref = Reflection();
+        if (const TagDecl *TgDecl = TransformedTy.getTypePtr()->getAsTagDecl())
+            Ref = Reflection(const_cast<TagDecl*>(TgDecl));
+        else
+            Ref = Reflection(TransformedTy);
+    } else if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D)) {
+        if (llvm::isa<NamespaceDecl>(NDecl)) {
+            Ref = Der.TransformDecl(NDecl->getLocStart(), const_cast<Decl*>(D));
+       }
+    } else {
+       llvm_unreachable("Reflection not supported for other decls !!");;
+    }
+}
+
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
+    Reflection Ref = E->getReflection();
+    if (const Decl *D = Ref.getAsDecl()) {
+        HandleReflectedDeclTransform(getDerived(), getSema(), const_cast<Decl*>(D), Ref);
+        if (Ref.IsEmpty())
+            return ExprError();
+    }
+    else if (const Type *T = Ref.getAsType()) {
+        QualType ResultType = getDerived().TransformType(Ref.getQualType());
+        if (TagDecl *TDecl = ResultType->getAsTagDecl()) {
+            HandleReflectedDeclTransform(getDerived(), getSema(), TDecl, Ref);
+            if (Ref.IsEmpty())
+                return ExprError();
+        }
+        else {
+            Ref = Reflection(ResultType);
+        }
+    }
+    else if (const Expr *Ex = Ref.getAsExpr()) {
+        Ref = Reflection(getDerived().TransformExpr(const_cast<Expr*>(Ex)).get());
+    }
+    return RebuildReflectionExpr(E->getLocStart(), E->getLocEnd(), Ref);
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
+    QualType ExprType = E->getType();
+    Expr** ExprArgs = E->getExprArgs();
+    Expr *IntrinsicIDExpr = ExprArgs[0];
+    llvm::APSInt IntrinsicID;
+    IntrinsicIDExpr->EvaluateAsInt(IntrinsicID, getSema().Context);
+    CXXMethodDecl *EnclosingFunction = llvm::dyn_cast<CXXMethodDecl>(getSema().getCurFunctionDecl());
+    ClassTemplateSpecializationDecl *CTSDecl = llvm::dyn_cast<ClassTemplateSpecializationDecl>(
+                Decl::castFromDeclContext(EnclosingFunction->getParent()));
+    ArrayRef<TemplateArgument> TemplateArgArray = CTSDecl->getTemplateInstantiationArgs().asArray();
+    TemplateArgumentList *ArgList = TemplateArgumentList::CreateCopy(getSema().Context, TemplateArgArray);
+    llvm::APSInt DeclPtr = ArgList->get(0).getAsIntegral();
+    const Decl* D = reinterpret_cast<Decl*>(DeclPtr.getExtValue());
+    if (ExprType == getSema().getASTContext().DependentTy) {
+        ReflectionIntrinsicsID ID = static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue());
+        SourceLocation Loc = E->getLocStart();
+        if (ID == RI_ParentDecl) {
+            const DeclContext *DContext = D->getDeclContext();
+            if (!DContext)
+                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+            else
+                ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
+        }
+        else if (ID == RI_LexicalParentDecl) {
+            const DeclContext *DContext = D->getLexicalDeclContext();
+            if (!DContext)
+                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+            else
+                ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
+        }
+        else if (ID == RI_Enumerators) {
+            if (!llvm::isa<EnumDecl>(D))
+                return ExprError();
+            const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D->getCanonicalDecl());
+            TemplateArgumentListInfo ArgInfo;
+            for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
+                 first != last; ++ first) {
+                QualType ArgType = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
+                ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(ArgType),
+                                        getSema().getASTContext().getTrivialTypeSourceInfo(ArgType)));
+            }
+            ExprType = getSema().BuildStdTuple(&ArgInfo, E->getLocStart());
+        }
+        else if (ID == RI_Begin) {
+            if (const DeclContext *DContext = llvm::dyn_cast<DeclContext>(D)) {
+                DeclContext::decl_iterator first = DContext->decls_begin();
+                DeclContext::decl_iterator last  = DContext->decls_end();
+                if (first != last)
+                    ExprType = getSema().getReflectExprTypeforDecl(*first, Loc);
+                else
+                    ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+            }
+        }
+        else if (ID == RI_End)
+            ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+    }
+#if 0
+    SmallVector<Expr*, 2> ExprArgs;
+    for (Expr *Arg: E->getExprArgs()) {
+        ExprResult Res = getDerived().TransformExpr(Arg);
+        if (Res.isInvalid())
+            return ExprError();
+        ExprArgs.push_back(Res.get());
+    }
+#endif
+    return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), DeclPtr, IntrinsicID, ExprType);
+}
+
 // Objective-C Statements.
 
 template<typename Derived>
@@ -7628,7 +7733,7 @@ StmtResult TreeTransform<Derived>::TransformSEHFinallyStmt(SEHFinallyStmt *S) {
 
 template <typename Derived>
 StmtResult TreeTransform<Derived>::TransformSEHExceptStmt(SEHExceptStmt *S) {
-  ExprResult FilterExpr = getDerived().TransformExpr(S->getFilterExpr());
+  ExprResult FilterExpr = S->getFilterExpr();
   if (FilterExpr.isInvalid())
     return StmtError();
 
@@ -12760,106 +12865,6 @@ TreeTransform<Derived>::TransformCapturedStmt(CapturedStmt *S) {
   }
 
   return getSema().ActOnCapturedRegionEnd(Body.get());
-}
-
-template<typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
-    Reflection Ref = E->getReflection();
-    if (const Decl *D = Ref.getAsDecl()) {
-        if (const ValueDecl *VDecl = llvm::dyn_cast<ValueDecl>(D)) {
-            DeclRefExpr *DRE = new (getSema().Context) DeclRefExpr(const_cast<ValueDecl*>(VDecl),
-                                                                   /*RefersToEnclosingVariableOrCapture=*/ false,
-                                                                   VDecl->getType(), ExprValueKind::VK_RValue,
-                                                                   E->getLocStart());
-            ExprResult Res = getDerived().TransformExpr(DRE);
-            if (Res.isInvalid())
-                return ExprError();
-            Ref = Reflection(Res.getAs<DeclRefExpr>()->getDecl());
-        } else if (const TypeDecl *TDecl = llvm::dyn_cast<TypeDecl>(D)) {
-            QualType Ty = getSema().getASTContext().getTypeDeclType(TDecl);
-            QualType TransformedTy = getDerived().TransformType(Ty);
-            if (TransformedTy.isNull())
-                return ExprError();
-            if (const TagDecl *TgDecl = TransformedTy.getTypePtr()->getAsTagDecl())
-                Ref = Reflection(const_cast<TagDecl*>(TgDecl));
-            else
-                Ref = Reflection(TransformedTy);
-        } else if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D)) {
-            if (llvm::isa<NamespaceDecl>(NDecl)) {
-                Ref = getDerived().TransformDecl(NDecl->getLocStart(), const_cast<Decl*>(D));
-           }
-        } else {
-           llvm_unreachable("Reflection not supported for other decls !!");;
-        }
-    }
-    else if (const Type *T = Ref.getAsType()) {
-        Ref = Reflection(getDerived().TransformType(Ref.getQualType()));
-    }
-    else if (const Expr *Ex = Ref.getAsExpr()) {
-        Ref = Reflection(getDerived().TransformExpr(const_cast<Expr*>(Ex)).get());
-    }
-    return RebuildReflectionExpr(E->getLocStart(), E->getLocEnd(), Ref);
-}
-
-template<typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
-    QualType ExprType = E->getType();
-    if (ExprType->isDependentType()) {
-        const Decl *D = E->getASTNodePtr();
-        ReflectionIntrinsicsID ID = E->getIntrinsicID();
-        SourceLocation Loc = E->getLocStart();
-        if (ID == RI_ParentDecl) {
-            const DeclContext *DContext = D->getDeclContext();
-            if (!DContext)
-                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
-            else
-                ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
-        }
-        else if (ID == RI_LexicalParentDecl) {
-            const DeclContext *DContext = D->getLexicalDeclContext();
-            if (!DContext)
-                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
-            else
-                ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
-        }
-        else if (ID == RI_Enumerators) {
-            if (!llvm::isa<EnumDecl>(D))
-                return ExprError();
-            const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D->getCanonicalDecl());
-            TemplateArgumentListInfo ArgInfo;
-            for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
-                 first != last; ++ first) {
-                QualType ArgType = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
-                ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(ArgType),
-                                        getSema().getASTContext().getTrivialTypeSourceInfo(ArgType)));
-
-            }
-            ExprType = getSema().BuildStdTuple(&ArgInfo, E->getLocStart());
-        }
-        else if (ID == RI_Begin) {
-            if (const DeclContext *DContext = llvm::dyn_cast<DeclContext>(D)) {
-                DeclContext::decl_iterator first = DContext->decls_begin();
-                DeclContext::decl_iterator last  = DContext->decls_end();
-                if (first != last)
-                    ExprType = getSema().getReflectExprTypeforDecl(*first, Loc);
-                else
-                    ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
-            }
-        }
-        else if (ID == RI_End)
-            ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
-    }
-    SmallVector<Expr*, 2> ExprArgs;
-    for (Expr *Arg: E->getExprArgs()) {
-        ExprResult Res = getDerived().TransformExpr(Arg);
-        if (Res.isInvalid())
-            return ExprError();
-        ExprArgs.push_back(Res.get());
-    }
-    QualType Ty = getDerived().TransformType(ExprType);
-    return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), E->getLocStart(), ExprArgs, E->getLocEnd(), Ty);
 }
 
 } // end namespace clang
