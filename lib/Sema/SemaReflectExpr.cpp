@@ -236,15 +236,15 @@ Sema::CreateStringViewObject(StringRef String, SourceLocation Loc) {
                                                                NewIntegerLiteral, nullptr, ExprValueKind::VK_RValue);
     CXXDefaultArgExpr *ThirdArgExpr = CXXDefaultArgExpr::Create(Context, Loc, ThirdParm);
     llvm::ArrayRef<Expr*> Args({ FirstArgExpr, SecondArgExpr, ThirdArgExpr });
-    TypeSourceInfo *TInfo = Context.CreateTypeSourceInfo(QualType(StdStringViewDecl->getTypeForDecl(), 0));
-    CXXTemporaryObjectExpr *TempObjExpr = new (Context) CXXTemporaryObjectExpr(
-                Context, StdStringViewCtorDecl, TInfo->getType(),
-                TInfo, Args, Loc,
-                /*HadMultipleCandidates=*/ false,
-                /*isListInitialization= */ false,
-                /*isStdInitListInitialization=*/ false,
-                /*RequiresZeroInit=     */ false);
-    return TempObjExpr;
+    QualType Ty = Context.getTypeDeclType(StdStringViewDecl);
+    CXXConstructExpr *E = CXXConstructExpr::Create(Context, Ty, Loc, StdStringViewCtorDecl,
+                                     /*Elidable=*/ false, Args,
+                                     /*HadMultipleCandidates=*/ false,
+                                     /*isListInitialization= */ false,
+                                     /*isStdInitListInitialization=*/ false,
+                                     /*RequiresZeroInit=     */ false,
+                                     CXXConstructExpr::CK_Complete, SourceRange(Loc));
+    return MaybeBindToTemporary(E);
 }
 
 ExprResult
@@ -286,7 +286,7 @@ Sema::CreateTupleObject(QualType Ty, llvm::MutableArrayRef<Expr *> Args, SourceL
                 Context, CtorDecl, StdTupleTy,
                 TInfo, FinalConverted, SourceRange(Loc),
                 /*HadMultipleCandidates=*/ false,
-                /*isListInitialization= */ true,
+                /*isListInitialization= */ false,
                 /*isStdInitListInitialization=*/ false,
                 /*RequiresZeroInit=     */ false);
     return TempObjExpr;
@@ -300,7 +300,7 @@ Sema::CreateMetaDeclObject(QualType MetaDeclObjectType, SourceLocation Loc) {
                                                 Context.getTrivialTypeSourceInfo(MetaDeclObjectType),
                                                 {}, SourceRange(Loc),
                                                 /*HadMultipleCandidates=*/ false,
-                                                /*isListInitialization= */ true,
+                                                /*isListInitialization= */ false,
                                                 /*isStdInitListInitialization=*/ false,
                                                 /*RequiresZeroInit=     */ false);
 }
