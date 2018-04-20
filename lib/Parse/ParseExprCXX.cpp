@@ -3294,3 +3294,24 @@ Parser::ParseReflectionIntrinsicExpression() {
     SourceLocation RParenLoc = Tracker.getCloseLocation();
     return Actions.ActOnReflectionIntrinsicExpression(KWLocation, LParenLoc, IntrinsicArgs, RParenLoc);
 }
+
+ExprResult
+Parser::ParseIdExprExpression() {
+    assert(Tok.is(tok::kw_idexpr) && "Not a idexpr expression");
+    return ExprError();
+    /*
+    SourceLocation KWLocation = ConsumeToken();
+    SmallVector<Expr*, 2> IdExprArgs;
+    BalancedDelimiterTracker Tracker(*this, tok::l_paren);
+    if (Tracker.expectAndConsume(diag::err_expected, "("))
+        return ExprError();
+    do {
+        ExprResult Res = ParseStringLiteralExpression();
+        assert(!Res.isInvalid() && "Not a string constant expression");
+        IdExprArgs.push_back(Res.get());
+    } while (TryConsumeToken(tok::comma));
+    if (Tracker.consumeClose())
+        return ExprError();
+    return Actions.ActOnIdExprExpression(IdExprArgs);
+    */
+}

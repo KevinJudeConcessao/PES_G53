@@ -1670,6 +1670,7 @@ private:
   // C++ Static Reflection Support
   ExprResult ParseReflectExprExpression();
   ExprResult ParseReflectionIntrinsicExpression();
+  ExprResult ParseIdExprExpression();
 
   //===--------------------------------------------------------------------===//
   // C++ Meta Constructs Support

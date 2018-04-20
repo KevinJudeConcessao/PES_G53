@@ -169,13 +169,13 @@ LookupStdStringView(Sema &S, SourceLocation Loc) {
         S.Diag(Loc, diag::err_implied_std_string_view_not_found);
         return nullptr;
     }
-    LookupResult StdStringViewResult(S, &S.PP.getIdentifierTable().get("string"), Loc,
+    LookupResult StdStringViewResult(S, &S.PP.getIdentifierTable().get("string_view"), Loc,
                                      Sema::LookupNameKind::LookupTagName);
     if (!S.LookupQualifiedName(StdStringViewResult, StdNamespaceDecl)) {
         S.Diag(Loc, diag::err_implied_std_string_view_not_found);
         return nullptr;
     }
-    TypedefDecl *StdStringViewTypedefDecl = StdStringViewResult.getAsSingle<TypedefDecl>();
+    TypedefNameDecl *StdStringViewTypedefDecl = StdStringViewResult.getAsSingle<TypedefNameDecl>();
     QualType StdStringViewType = StdStringViewTypedefDecl->getUnderlyingType();
     return (StdStringViewType.getTypePtr())->getAsCXXRecordDecl();
 }
@@ -220,7 +220,7 @@ Sema::CreateStringViewObject(StringRef String, SourceLocation Loc) {
             AddOverloadCandidate(FuncDecl, DeclAccessPair::make(FuncDecl, Ctor->getAccess()),
             {NewStringLiteral, NewIntegerLiteral}, CtorCandidateSet,
                                    /*SuppressUserConversions=*/ false,
-                                   /*PartialOverloading=*/ true);
+                                   /*PartialOverloading=*/ false);
         }
     }
     OverloadCandidateSet::iterator BestResultPtr;
@@ -229,13 +229,13 @@ Sema::CreateStringViewObject(StringRef String, SourceLocation Loc) {
     CXXConstructorDecl *StdStringViewCtorDecl = llvm::dyn_cast<CXXConstructorDecl>(BestResultPtr->Function);
     ParmVarDecl *FirstParm = StdStringViewCtorDecl->getParamDecl(0);
     ParmVarDecl *SecondParm = StdStringViewCtorDecl->getParamDecl(1);
-    ParmVarDecl *ThirdParm = StdStringViewCtorDecl->getParamDecl(2);
+    /*ParmVarDecl *ThirdParm = StdStringViewCtorDecl->getParamDecl(2);*/
     ImplicitCastExpr *FirstArgExpr = ImplicitCastExpr::Create(Context, FirstParm->getType(), CastKind::CK_ArrayToPointerDecay,
                                                               NewStringLiteral, nullptr, ExprValueKind::VK_RValue);
     ImplicitCastExpr *SecondArgExpr = ImplicitCastExpr::Create(Context, SecondParm->getType(), CastKind::CK_IntegralCast,
                                                                NewIntegerLiteral, nullptr, ExprValueKind::VK_RValue);
-    CXXDefaultArgExpr *ThirdArgExpr = CXXDefaultArgExpr::Create(Context, Loc, ThirdParm);
-    llvm::ArrayRef<Expr*> Args({ FirstArgExpr, SecondArgExpr, ThirdArgExpr });
+    /*CXXDefaultArgExpr *ThirdArgExpr = CXXDefaultArgExpr::Create(Context, Loc, ThirdParm);*/
+    llvm::ArrayRef<Expr*> Args({ FirstArgExpr, SecondArgExpr, /*ThirdArgExpr*/ });
     QualType Ty = Context.getTypeDeclType(StdStringViewDecl);
     CXXConstructExpr *E = CXXConstructExpr::Create(Context, Ty, Loc, StdStringViewCtorDecl,
                                      /*Elidable=*/ false, Args,
@@ -352,25 +352,26 @@ Sema::ActOnReflectionTypeIdentifier(Declarator &D, Reflection &Ref) {
 
 QualType
 Sema::getReflectExprTypeforDecl(const Decl *DeclPtr, SourceLocation Loc) {
-    StringRef TargetClassType;
+    StringRef TargetClassType = "meta_decl";
     if (isa<EnumDecl>(DeclPtr))
         TargetClassType = "meta_enum";
     else if (isa<EnumConstantDecl>(DeclPtr))
         TargetClassType = "meta_enum_constant";
     else if (isa<CXXRecordDecl>(DeclPtr))
-        TargetClassType = "meta_class";
+        TargetClassType = "meta_record";
     else if (isa<NamespaceDecl>(DeclPtr))
         TargetClassType = "meta_namespace";
     else if (isa<FieldDecl>(DeclPtr))
         TargetClassType = "meta_field";
     else if (isa<CXXMethodDecl>(DeclPtr))
         TargetClassType = "meta_method";
-    if (!TargetClassType.empty()) {
-        TemplateArgument PtrArg = CreateIntegralTemplateArgument(getASTContext(),
+    else if (isa<FunctionDecl>(DeclPtr))
+        TargetClassType = "meta_function";
+    else if (isa<ValueDecl>(DeclPtr))
+        TargetClassType = "meta_variable";
+    TemplateArgument PtrArg = CreateIntegralTemplateArgument(getASTContext(),
                                                                  reinterpret_cast<uint64_t>(DeclPtr));
-        return BuildReflectionObjectType(TargetClassType, PtrArg, Loc);
-    }
-    llvm_unreachable("Unsupported decl for reflection !!");
+    return BuildReflectionObjectType(TargetClassType, PtrArg, Loc);
 }
 
 QualType
@@ -453,27 +454,35 @@ Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LP
         TransformedArgs.push_back(TransformedArg);
     }
     TransformedArgs[0]->EvaluateAsInt(IntrinsicID, Context);
+    llvm::outs() << "ID: " << (RI_SourceFile==IntrinsicID.getExtValue()) << "\n";
     switch (static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue())) {
         default:
             llvm_unreachable("Unknown reflection intrinsic ID");
+        break;
+        /* name properties */
         case RI_Name:
             ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
             break;
-        case RI_ParentDecl:
-        case RI_LexicalParentDecl:
-        case RI_PreviousDecl:
-        case RI_NextDecl:
-        case RI_Begin:
-        case RI_End:
-            ResultTy = Context.DependentTy;
-            break;
-        case RI_Enumerators:
-            ResultTy = Context.DependentTy;
-            break;
-        case RI_IsComplete:
+        case RI_IsNamed:
             ResultTy = Context.BoolTy;
             break;
-        case RI_SourceFileName:
+         /* type support */
+        case RI_TypeName:
+            ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
+            break;
+        /* context traversal */
+        case RI_ParentDecl:
+        case RI_ParentLexicalDecl:
+        case RI_PreviousDecl:
+        case RI_NextDecl:
+            ResultTy = Context.DependentTy;
+            break;
+        /* access specifiers */
+        case RI_AccessSpecifier:
+            ResultTy = Context.IntTy;
+            break;
+        /* source file information */
+        case RI_SourceFile:
             ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
             break;
         case RI_SourceFileStart:
@@ -486,11 +495,25 @@ Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LP
                 ResultTy = BuildStdTuple(&ArgInfo, KWLoc);
             }
             break;
-        case RI_EnumSize:
-        case RI_EnumConstantValue:
+        /* children sequencing support */
+        case RI_Begin:
+        case RI_End:
+        case RI_SubSequence:
+            ResultTy = Context.DependentTy;
+            break;
+        /* value support */
+        case RI_Value:
+            ResultTy = Context.DependentTy;
+            break;
+        /* specifiers */
+        case RI_Specifier:
             ResultTy = Context.IntTy;
             break;
     }
     return new (Context) ReflectionIntrinsicExpr(Context, KWLoc, LParenLoc, RParenLoc, TransformedArgs, ResultTy);
+}
 
+ExprResult
+Sema::ActOnIdExprExpression(SmallVector<Expr*, 2> IdExprArgs) {
+    return ExprError();
 }

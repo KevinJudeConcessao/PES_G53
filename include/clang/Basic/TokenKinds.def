@@ -342,6 +342,7 @@ KEYWORD(wchar_t                     , WCHARSUPPORT)
 
 // C++ Reflection support.
 REFLECTION_KEYWORD(reflect_expr)
+REFLECTION_KEYWORD(idexpr)
 
 // C++ Reflection intrinsic.
 REFLECTION_KEYWORD(__reflection_intrinsic)

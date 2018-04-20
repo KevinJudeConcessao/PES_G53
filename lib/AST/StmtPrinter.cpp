@@ -2357,11 +2357,14 @@ void StmtPrinter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
       case RI_Name:
           IntrinsicName = "RI_Name";
           break;
+      case RI_IsNamed:
+          IntrinsicName = "RI_IsNamed";
+          break;
       case RI_ParentDecl:
           IntrinsicName = "RI_ParentDecl";
           break;
-      case RI_LexicalParentDecl:
-          IntrinsicName = "RI_LexicalParentDecl";
+      case RI_ParentLexicalDecl:
+          IntrinsicName = "RI_ParentLexicalDecl";
           break;
       case RI_PreviousDecl:
           IntrinsicName = "RI_PreviousDecl";
@@ -2369,19 +2372,10 @@ void StmtPrinter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
       case RI_NextDecl:
           IntrinsicName = "RI_NextDecl";
           break;
-      case RI_Begin:
-          IntrinsicName = "RI_Begin";
+      case RI_AccessSpecifier:
+          IntrinsicName = "RI_AccessSpecifier";
           break;
-      case RI_End:
-          IntrinsicName = "RI_End";
-          break;
-      case RI_Enumerators:
-          IntrinsicName = "RI_Enumerators";
-          break;
-      case RI_IsComplete:
-          IntrinsicName = "RI_IsComplete";
-          break;
-      case RI_SourceFileName:
+      case RI_SourceFile:
           IntrinsicName = "RI_SourceFileName";
           break;
       case RI_SourceFileStart:
@@ -2390,11 +2384,20 @@ void StmtPrinter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
       case RI_SourceFileEnd:
           IntrinsicName = "RI_SourceFileEnd";
           break;
-      case RI_EnumSize:
-          IntrinsicName = "RI_EnumSize";
+      case RI_Begin:
+          IntrinsicName = "RI_Begin";
           break;
-      case RI_EnumConstantValue:
-          IntrinsicName = "RI_EnumConstantValue";
+      case RI_End:
+          IntrinsicName = "RI_End";
+          break;
+      case RI_SubSequence:
+          IntrinsicName = "RI_SubSequence";
+          break;
+      case RI_Value:
+          IntrinsicName = "RI_Value";
+          break;
+      case RI_Specifier:
+          IntrinsicName = "RI_Specifier";
           break;
   }
   OS << ")";

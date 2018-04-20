@@ -1986,7 +1986,9 @@ def err_auto_init_list_from_c : Error<
 def err_auto_bitfield : Error<
   "cannot pass bit-field as __auto_type initializer in C">;
 
-// C++ type reflection support
+// C++ type reflection support\
+def err_reflected_entity_invalid: Error<
+ "the reflection object does not refer to a valid entity, and hence cannot be queried">;
 def err_reflect_expr_type_id_not_found: Error<
  "type-id %0 in reflect_expr was not found">;
 def err_reflect_expr_requires_header : Error<

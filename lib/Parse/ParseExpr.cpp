@@ -727,7 +727,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [C++2X] reflect-expr-expression
 ///             'reflect_expr' '(' type-id ')'
 /// [C++2X] reflect-intrinsic-expression
-///             '__reflection_intrinsic' '(' identifier ',' enumeration-constant ')'
+///             '__reflection_intrinsic' '(' enumeration-constant ')'
 ///
 ///       binary-type-trait:
 /// [GNU]             '__is_base_of'       
@@ -1169,6 +1169,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     break;
   case tok::kw___reflection_intrinsic:
     Res = ParseReflectionIntrinsicExpression();
+    break;
+  case tok::kw_idexpr:
+    Res = ParseIdExprExpression();
     break;
 
   case tok::ampamp: {      // unary-expression: '&&' identifier
@@ -2375,7 +2378,7 @@ Parser::ParseParenExpression(ParenParseOption &ExprType, bool stopIfCastExpr,
     // Otherwise, this is a compound literal expression or cast expression.
 
     // In C++, if the type-id is ambiguous we disambiguate based on context.
-    // If stopIfCastExpr is true the context is a typeof/sizeof/alignof/reflect_expr
+    // If stopIfCastExpr is true the context is a typeof/sizeof/alignof
     // in which case we should treat it as type-id.
     // if stopIfCastExpr is false, we need to determine the context past the
     // parens, so we defer to ParseCXXAmbiguousParenExpression for that.

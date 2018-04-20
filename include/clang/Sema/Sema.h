@@ -4220,6 +4220,7 @@ public:
   ExprResult BuildReflectExprExpression();
   ExprResult ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
                                                 SmallVector<Expr*, 2> IntrinsicArgs, SourceLocation RParenLoc);
+  ExprResult ActOnIdExprExpression(SmallVector<Expr *, 2> IdExprArgs);
   ExprResult BuildReflectionIntrinsicExpression();
 
   // This struct is for use by ActOnMemberAccess to allow
@@ -4492,15 +4493,6 @@ public:
 
   NamespaceDecl *getStdNamespace() const;
   NamespaceDecl *getOrCreateStdNamespace();
-
-  enum MetaObjecKind {
-      MK_Decl,
-      MK_Seq,
-      MK_Enum,
-      MK_EnumConstant,
-      MK_Class,
-      MK_Namespace
-  };
 
   NamespaceDecl *lookupStdExperimentalNamespace();
   NamespaceDecl *lookupStdReflectionNamespace();

@@ -2735,17 +2735,27 @@ public:
           else
               Result = ExprError();
           break;
+      case RI_IsNamed:
+          Result = new (getSema().Context) CXXBoolLiteralExpr(llvm::isa<NamedDecl>(D) ? true : false,
+                                                              Ty, KWLoc);
+          break;
       case RI_ParentDecl:
-      case RI_LexicalParentDecl:
+      case RI_ParentLexicalDecl:
       case RI_PreviousDecl:
       case RI_NextDecl:
           Result = getSema().CreateMetaDeclObject(Ty, KWLoc);
           break;
-      case RI_IsComplete:
-          Result = new (getSema().Context) CXXBoolLiteralExpr(D->getCanonicalDecl() ?
-                                                                  true : false, getSema().Context.IntTy, KWLoc);
+      case RI_AccessSpecifier: {
+          ClassAccessSpecifier AccessSpec = ClassAccessSpecifier::RI_NoAccess;
+          AccessSpecifier AS = D->getAccess();
+          if (AS == AS_none) AccessSpec = RI_NoAccess;
+          else if (AS == AS_private)   AccessSpec = RI_Private;
+          else if (AS == AS_protected) AccessSpec = RI_Protected;
+          else if (AS == AS_public)    AccessSpec = RI_Public;
+          Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int) * 8, AccessSpec), Ty, KWLoc);
+        }
           break;
-      case RI_SourceFileName: {
+      case RI_SourceFile: {
           const FileEntry *Entry = StartLoc.getFileEntry();
           Result = getSema().CreateStringViewObject(Entry->getName(), KWLoc);
         }
@@ -2772,30 +2782,46 @@ public:
       case RI_End:
           Result = getSema().CreateMetaDeclObject(Ty, KWLoc);
           break;
-      case RI_Enumerators:
-          if (const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D)) {
-              llvm::SmallVector<Expr*, 8> Enumerators;
-              for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
-                   first != last; ++first) {
-                  QualType EnumeratorTy = getSema().getReflectExprTypeforDecl(*first, KWLoc);
-                  Enumerators.push_back(getSema().CreateMetaDeclObject(EnumeratorTy, KWLoc).get());
+      case RI_SubSequence: {
+          llvm::SmallVector<Expr*, 8> TupleArgs;
+          const DeclContext *DContext = llvm::dyn_cast<DeclContext>(D);
+          for (DeclContext::decl_iterator first = DContext->decls_begin(), last = DContext->decls_end();
+               first != last; ++first) {
+              if (llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first) || llvm::isa<DeclaratorDecl>(*first)) {
+                  QualType ArgTy = getSema().getReflectExprTypeforDecl(*first, KWLoc);
+                  TupleArgs.push_back(getSema().CreateMetaDeclObject(ArgTy, KWLoc).get());
               }
-              Result = getSema().CreateTupleObject(Ty, Enumerators, KWLoc);
           }
+          Result = getSema().CreateTupleObject(Ty, TupleArgs, KWLoc);
+      }
           break;
-      case RI_EnumSize:
-          if (const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D)) {
-              EnumDecl::enumerator_iterator first = EDecl->enumerator_begin();
-              EnumDecl::enumerator_iterator last  = EDecl->enumerator_end();
-              Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, std::distance(first, last)),
-                                              getSema().Context.IntTy, KWLoc);
+      case RI_Specifier: {
+          int64_t SpecifierBits = 0;
+          if (const VarDecl* VDecl = llvm::dyn_cast<VarDecl>(D)) {
+              SpecifierBits = (VDecl->getStorageClass() == StorageClass::SC_Extern) << RI_IsExtern
+                            | (VDecl->getStorageClass() == StorageClass::SC_Static) << RI_IsStatic
+                            | (VDecl->isConstexpr())                                << RI_IsConstExpr;
+          } else if (const FieldDecl *FDecl = llvm::dyn_cast<FieldDecl>(D)) {
+              SpecifierBits = (FDecl->isMutable()) << RI_IsMutable;
+          } else if (const FunctionDecl *FDecl = llvm::dyn_cast<FunctionDecl>(D)) {
+              SpecifierBits = (FDecl->getStorageClass() == StorageClass::SC_Extern) << RI_IsExtern
+                            | (FDecl->getStorageClass() == StorageClass::SC_Static) << RI_IsStatic
+                            | (FDecl->isConstexpr())                                << RI_IsConstExpr;
+              if (const CXXMethodDecl *MDecl = llvm::dyn_cast<CXXMethodDecl>(D)) {
+                  SpecifierBits = SpecifierBits
+                                | MDecl->isVirtual()  << RI_IsVirtual
+                                | MDecl->isPure()     << RI_IsPureVirtual;
+              }
           }
-          break;
-      case RI_EnumConstantValue:
-          if (const EnumConstantDecl *ECDecl = llvm::dyn_cast<EnumConstantDecl>(D)) {
-              Result = IntegerLiteral::Create(getSema().Context, ECDecl->getInitVal(), getSema().Context.IntTy, KWLoc);
-          }
-          break;
+          Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(64, SpecifierBits), Ty, KWLoc);
+        }
+        break;
+      case RI_Value: {
+          ValueDecl *VDecl = const_cast<ValueDecl*>(llvm::dyn_cast<ValueDecl>(D));
+          Result = new (getSema().Context) DeclRefExpr(VDecl, /*RefersToEnclosingVariableOrCapture */ false, Ty,
+                                                       Ty->isLValueReferenceType() ? VK_LValue : VK_RValue, KWLoc);
+      }
+        break;
       default:
           llvm_unreachable("Unknown reflection intrinsic !!!");
       }
@@ -7164,7 +7190,6 @@ static void HandleReflectedDeclTransform(Derived &Der, const Sema &SemaRef, Decl
     }
 }
 
-
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
@@ -7202,42 +7227,34 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
     CXXMethodDecl *EnclosingFunction = llvm::dyn_cast<CXXMethodDecl>(getSema().getCurFunctionDecl());
     ClassTemplateSpecializationDecl *CTSDecl = llvm::dyn_cast<ClassTemplateSpecializationDecl>(
                 Decl::castFromDeclContext(EnclosingFunction->getParent()));
+    CTSDecl->dump();
     ArrayRef<TemplateArgument> TemplateArgArray = CTSDecl->getTemplateInstantiationArgs().asArray();
     TemplateArgumentList *ArgList = TemplateArgumentList::CreateCopy(getSema().Context, TemplateArgArray);
-    llvm::APSInt DeclPtr = ArgList->get(0).getAsIntegral();
-    const Decl* D = reinterpret_cast<Decl*>(DeclPtr.getExtValue());
+    llvm::APSInt DeclPtrValue = ArgList->get(0).getAsIntegral();
+    const Decl* DeclPtr = reinterpret_cast<Decl*>(DeclPtrValue.getExtValue());
+    if (!DeclPtr) {
+        return ExprError(getSema().Diag(E->getKeywordLoc(), diag::err_reflected_entity_invalid)
+                         << FixItHint::CreateInsertion(SourceLocation(), "is_null()"));
+    }
     if (ExprType == getSema().getASTContext().DependentTy) {
         ReflectionIntrinsicsID ID = static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue());
         SourceLocation Loc = E->getLocStart();
         if (ID == RI_ParentDecl) {
-            const DeclContext *DContext = D->getDeclContext();
+            const DeclContext *DContext = DeclPtr->getDeclContext();
             if (!DContext)
                 ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
             else
                 ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
         }
-        else if (ID == RI_LexicalParentDecl) {
-            const DeclContext *DContext = D->getLexicalDeclContext();
+        else if (ID == RI_ParentLexicalDecl) {
+            const DeclContext *DContext = DeclPtr->getLexicalDeclContext();
             if (!DContext)
                 ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
             else
                 ExprType = getSema().getReflectExprTypeforDecl(Decl::castFromDeclContext(DContext), Loc);
-        }
-        else if (ID == RI_Enumerators) {
-            if (!llvm::isa<EnumDecl>(D))
-                return ExprError();
-            const EnumDecl *EDecl = llvm::dyn_cast<EnumDecl>(D->getCanonicalDecl());
-            TemplateArgumentListInfo ArgInfo;
-            for (EnumDecl::enumerator_iterator first = EDecl->enumerator_begin(), last = EDecl->enumerator_end();
-                 first != last; ++ first) {
-                QualType ArgType = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
-                ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(ArgType),
-                                        getSema().getASTContext().getTrivialTypeSourceInfo(ArgType)));
-            }
-            ExprType = getSema().BuildStdTuple(&ArgInfo, E->getLocStart());
         }
         else if (ID == RI_Begin) {
-            if (const DeclContext *DContext = llvm::dyn_cast<DeclContext>(D)) {
+            if (const DeclContext *DContext = llvm::dyn_cast<DeclContext>(DeclPtr)) {
                 DeclContext::decl_iterator first = DContext->decls_begin();
                 DeclContext::decl_iterator last  = DContext->decls_end();
                 if (first != last)
@@ -7246,19 +7263,33 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
                     ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
             }
         }
+        else if (ID == RI_SubSequence) {
+            const DeclContext *DContext = llvm::dyn_cast<DeclContext>(DeclPtr);
+            DeclContext::decl_iterator first = DContext->decls_begin();
+            DeclContext::decl_iterator last  = DContext->decls_end();
+            TemplateArgumentListInfo ArgInfo;
+            for (; first != last; ++ first) {
+                if (llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first) || llvm::isa<DeclaratorDecl>(*first)) {
+                    QualType ArgType = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
+                    ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(ArgType), getSema().Context.getTrivialTypeSourceInfo(ArgType)));
+                }
+            }
+            ExprType = getSema().BuildStdTuple(&ArgInfo, E->getLocStart());
+        }
         else if (ID == RI_End)
             ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+        else if (ID == RI_Value) {
+           const ValueDecl *VDecl = llvm::dyn_cast_or_null<ValueDecl>(DeclPtr);
+           assert(VDecl && "Reflection object is not value type");
+           if (llvm::isa<EnumConstantDecl>(VDecl))
+               ExprType = VDecl->getType();
+           else if (llvm::isa<VarDecl>(VDecl) || llvm::isa<FieldDecl>(VDecl)) {
+               ExprType = getSema().Context.getLValueReferenceType(VDecl->getType());
+           } else if (llvm::isa<FunctionDecl>(VDecl))
+               ExprType = getSema().Context.getPointerType(VDecl->getType());
+        }
     }
-#if 0
-    SmallVector<Expr*, 2> ExprArgs;
-    for (Expr *Arg: E->getExprArgs()) {
-        ExprResult Res = getDerived().TransformExpr(Arg);
-        if (Res.isInvalid())
-            return ExprError();
-        ExprArgs.push_back(Res.get());
-    }
-#endif
-    return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), DeclPtr, IntrinsicID, ExprType);
+    return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), DeclPtrValue, IntrinsicID, ExprType);
 }
 
 // Objective-C Statements.
