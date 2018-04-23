@@ -813,6 +813,10 @@ public:
   /// standard library
   CXXRecordDecl *StdStringViewCache;
 
+  /// \brief The C++ "std::string_literal" class which is defined in the C++
+  /// standard library
+  ClassTemplateDecl *StdStringLiteralCache;
+
   /// \brief The C++ "std::tuple" template, which is defined in the C++ standard
   /// library
   ClassTemplateDecl *StdTupleTemplate;
@@ -4220,6 +4224,7 @@ public:
   ExprResult BuildReflectExprExpression();
   ExprResult ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
                                                 SmallVector<Expr*, 2> IntrinsicArgs, SourceLocation RParenLoc);
+  ExprResult ActOnStrLitExpression(const llvm::StringRef& String, SourceLocation Loc);
   ExprResult ActOnIdExprExpression(SmallVector<Expr *, 2> IdExprArgs);
   ExprResult BuildReflectionIntrinsicExpression();
 
@@ -4497,11 +4502,13 @@ public:
   NamespaceDecl *lookupStdExperimentalNamespace();
   NamespaceDecl *lookupStdReflectionNamespace();
   QualType BuildStdTuple(TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc);
+  QualType BuildStdStringLiteral(const llvm::StringRef& String, SourceLocation Loc);
   QualType BuildReflectionObjectType(const StringRef &TargetMeta, TemplateArgument IntTemplateArg,
                                      SourceLocation Loc);
   QualType getReflectExprTypeforDecl(const Decl *DeclPtr, SourceLocation Loc);
   QualType getInvalidReflectExprTypeForDecl(SourceLocation Loc);
   ExprResult CreateStringViewObject(StringRef String, SourceLocation Loc);
+  ExprResult CreateStringLiteralObject(QualType Ty, SourceLocation Loc);
   ExprResult CreateTupleObject(QualType Ty, llvm::MutableArrayRef<Expr*> Args, SourceLocation Loc);
   ExprResult CreateMetaDeclObject(QualType MetaDeclObjectType, SourceLocation Loc);
   CXXRecordDecl *getStdStringView(SourceLocation Loc);

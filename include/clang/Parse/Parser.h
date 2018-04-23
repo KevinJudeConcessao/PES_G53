@@ -1671,6 +1671,7 @@ private:
   ExprResult ParseReflectExprExpression();
   ExprResult ParseReflectionIntrinsicExpression();
   ExprResult ParseIdExprExpression();
+  ExprResult ParseStrLitExpression();
 
   //===--------------------------------------------------------------------===//
   // C++ Meta Constructs Support

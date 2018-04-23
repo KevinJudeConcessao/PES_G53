@@ -2730,10 +2730,8 @@ public:
       ExprResult Result;
       switch (ID) {
       case RI_Name:
-          if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(D))
-              Result = getSema().CreateStringViewObject(NDecl->getName(), KWLoc);
-          else
-              Result = ExprError();
+      case RI_TypeName:
+          Result = getSema().CreateStringLiteralObject(Ty, KWLoc);
           break;
       case RI_IsNamed:
           Result = new (getSema().Context) CXXBoolLiteralExpr(llvm::isa<NamedDecl>(D) ? true : false,
@@ -2787,7 +2785,7 @@ public:
           const DeclContext *DContext = llvm::dyn_cast<DeclContext>(D);
           for (DeclContext::decl_iterator first = DContext->decls_begin(), last = DContext->decls_end();
                first != last; ++first) {
-              if (llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first) || llvm::isa<DeclaratorDecl>(*first)) {
+              if (!first->isImplicit() && (llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first) || llvm::isa<DeclaratorDecl>(*first) || llvm::isa<EnumConstantDecl>(*first))) {
                   QualType ArgTy = getSema().getReflectExprTypeforDecl(*first, KWLoc);
                   TupleArgs.push_back(getSema().CreateMetaDeclObject(ArgTy, KWLoc).get());
               }
@@ -2813,13 +2811,14 @@ public:
                                 | MDecl->isPure()     << RI_IsPureVirtual;
               }
           }
-          Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(64, SpecifierBits), Ty, KWLoc);
+          Result = IntegerLiteral::Create(getSema().Context, llvm::APInt(sizeof(int)*8, SpecifierBits), Ty, KWLoc);
         }
         break;
       case RI_Value: {
           ValueDecl *VDecl = const_cast<ValueDecl*>(llvm::dyn_cast<ValueDecl>(D));
           Result = new (getSema().Context) DeclRefExpr(VDecl, /*RefersToEnclosingVariableOrCapture */ false, Ty,
-                                                       Ty->isLValueReferenceType() ? VK_LValue : VK_RValue, KWLoc);
+                                                       VK_RValue, KWLoc);
+
       }
         break;
       default:
@@ -7227,7 +7226,6 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
     CXXMethodDecl *EnclosingFunction = llvm::dyn_cast<CXXMethodDecl>(getSema().getCurFunctionDecl());
     ClassTemplateSpecializationDecl *CTSDecl = llvm::dyn_cast<ClassTemplateSpecializationDecl>(
                 Decl::castFromDeclContext(EnclosingFunction->getParent()));
-    CTSDecl->dump();
     ArrayRef<TemplateArgument> TemplateArgArray = CTSDecl->getTemplateInstantiationArgs().asArray();
     TemplateArgumentList *ArgList = TemplateArgumentList::CreateCopy(getSema().Context, TemplateArgArray);
     llvm::APSInt DeclPtrValue = ArgList->get(0).getAsIntegral();
@@ -7239,7 +7237,20 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
     if (ExprType == getSema().getASTContext().DependentTy) {
         ReflectionIntrinsicsID ID = static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue());
         SourceLocation Loc = E->getLocStart();
-        if (ID == RI_ParentDecl) {
+        if (ID == RI_Name) {
+            if (const NamedDecl *NDecl = llvm::dyn_cast<NamedDecl>(DeclPtr))
+                ExprType = getSema().BuildStdStringLiteral(NDecl->getName(), Loc);
+            else
+                return ExprError();
+        }
+        else if (ID == RI_TypeName) {
+            if (const ValueDecl *VDecl = llvm::dyn_cast<ValueDecl>(DeclPtr))
+                ExprType =  getSema().BuildStdStringLiteral(VDecl->getType().getCanonicalType().getAsString(), Loc);
+            else if (const TagDecl *TDecl = llvm::dyn_cast<TagDecl>(DeclPtr))
+                ExprType = getSema().BuildStdStringLiteral(TDecl->getNameAsString(), Loc);
+            else
+                return ExprError();
+        }else if (ID == RI_ParentDecl) {
             const DeclContext *DContext = DeclPtr->getDeclContext();
             if (!DContext)
                 ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
@@ -7257,11 +7268,29 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
             if (const DeclContext *DContext = llvm::dyn_cast<DeclContext>(DeclPtr)) {
                 DeclContext::decl_iterator first = DContext->decls_begin();
                 DeclContext::decl_iterator last  = DContext->decls_end();
+                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
+                while (first != last && (first->isImplicit() || !(llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first)
+                       || llvm::isa<DeclaratorDecl>(*first) || llvm::isa<EnumConstantDecl>(*first))))
+                    ++ first;
                 if (first != last)
                     ExprType = getSema().getReflectExprTypeforDecl(*first, Loc);
-                else
-                    ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
             }
+        }
+        else if (ID == RI_NextDecl || ID == RI_PreviousDecl) {
+            Decl *CurDecl = const_cast<Decl*>(DeclPtr);
+            do {
+                if (ID == RI_NextDecl)
+                    CurDecl = CurDecl->getNextDeclInContext();
+               else
+                    CurDecl = CurDecl->getPreviousDecl();
+            } while (CurDecl && !(llvm::isa<NamespaceDecl>(CurDecl)
+                       || llvm::isa<TagDecl>(CurDecl)
+                       || llvm::isa<DeclaratorDecl>(CurDecl)
+                       || llvm::isa<EnumConstantDecl>(CurDecl)));
+            if (CurDecl)
+                ExprType = getSema().getReflectExprTypeforDecl(CurDecl, Loc);
+            else
+                ExprType = getSema().getInvalidReflectExprTypeForDecl(Loc);
         }
         else if (ID == RI_SubSequence) {
             const DeclContext *DContext = llvm::dyn_cast<DeclContext>(DeclPtr);
@@ -7269,7 +7298,7 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
             DeclContext::decl_iterator last  = DContext->decls_end();
             TemplateArgumentListInfo ArgInfo;
             for (; first != last; ++ first) {
-                if (llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first) || llvm::isa<DeclaratorDecl>(*first)) {
+                if (!first->isImplicit() && (llvm::isa<NamespaceDecl>(*first) || llvm::isa<TagDecl>(*first) || llvm::isa<DeclaratorDecl>(*first) || llvm::isa<EnumConstantDecl>(*first))) {
                     QualType ArgType = getSema().getReflectExprTypeforDecl(*first, E->getLocStart());
                     ArgInfo.addArgument(TemplateArgumentLoc(TemplateArgument(ArgType), getSema().Context.getTrivialTypeSourceInfo(ArgType)));
                 }
@@ -7283,10 +7312,11 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
            assert(VDecl && "Reflection object is not value type");
            if (llvm::isa<EnumConstantDecl>(VDecl))
                ExprType = VDecl->getType();
-           else if (llvm::isa<VarDecl>(VDecl) || llvm::isa<FieldDecl>(VDecl)) {
-               ExprType = getSema().Context.getLValueReferenceType(VDecl->getType());
-           } else if (llvm::isa<FunctionDecl>(VDecl))
+           else if (llvm::isa<VarDecl>(VDecl)) {
+              ExprType = getSema().Context.getLValueReferenceType(VDecl->getType());
+           } else if (llvm::isa<FunctionDecl>(VDecl)) {
                ExprType = getSema().Context.getPointerType(VDecl->getType());
+           }
         }
     }
     return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), DeclPtrValue, IntrinsicID, ExprType);

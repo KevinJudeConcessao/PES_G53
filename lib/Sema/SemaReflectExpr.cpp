@@ -180,8 +180,38 @@ LookupStdStringView(Sema &S, SourceLocation Loc) {
     return (StdStringViewType.getTypePtr())->getAsCXXRecordDecl();
 }
 
-CXXRecordDecl*
-Sema::getStdStringView(SourceLocation Loc) {
+static ClassTemplateDecl*
+LookupStdStringLiteral(Sema &S, SourceLocation Loc) {
+    NamespaceDecl *StdNamespaceDecl = S.getStdNamespace();
+    if (!StdNamespaceDecl) {
+        S.Diag(Loc, diag::err_implied_std_string_view_not_found);
+        return nullptr;
+    }
+    LookupResult StdStringLiteralResult(S, &S.PP.getIdentifierTable().get("string_literal"), Loc,
+                                     Sema::LookupNameKind::LookupTagName);
+    if (!S.LookupQualifiedName(StdStringLiteralResult, StdNamespaceDecl)) {
+        S.Diag(Loc, diag::err_implied_std_string_view_not_found);
+        return nullptr;
+    }
+    ClassTemplateDecl *StdStringLiteralTemplate = StdStringLiteralResult.getAsSingle<ClassTemplateDecl>();
+    if (!StdStringLiteralTemplate) {
+        StdStringLiteralResult.suppressDiagnostics();;
+        NamedDecl *Found = *StdStringLiteralResult.begin();
+        S.Diag(Found->getLocation(), diag::err_malformed_std_tuple);
+        return nullptr;
+    }
+#if 0
+    TemplateParameterList *Parameters = StdStringLiteralTemplate->getTemplateParameters();
+    if (Parameters->size() != 1 || !isa<TemplateTypeParmDecl>(Parameters->getParam(0)) ||
+            !(llvm::dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)))->isParameterPack()) {
+        S.Diag(StdStringLiteralTemplate->getLocation(), diag::err_malformed_std_tuple);
+        return nullptr;
+    }
+#endif
+    return StdStringLiteralTemplate;
+}
+
+CXXRecordDecl *Sema::getStdStringView(SourceLocation Loc) {
     if (!StdStringViewCache) {
         StdStringViewCache = LookupStdStringView(*this, Loc);
     }
@@ -205,6 +235,37 @@ Sema::BuildStdTuple(TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc) 
             return QualType();
     }
     return SpecializeClassTemplate(*this, StdTupleTemplate, TemplateArgs, Loc);
+}
+
+QualType
+Sema::BuildStdStringLiteral(const llvm::StringRef &String, SourceLocation Loc) {
+    if (!StdStringLiteralCache) {
+        StdStringLiteralCache = LookupStdStringLiteral(*this, Loc);
+        if (!StdStringLiteralCache)
+            return QualType();
+    }
+    TemplateArgumentListInfo TemplateArgs(Loc, Loc);
+    for(llvm::StringRef::iterator first = String.begin(), last = String.end(); first != last; ++first) {
+        TemplateArgs.addArgument(TemplateArgumentLoc(TemplateArgument(Context, llvm::APSInt(llvm::APInt(sizeof(char) * 8, *first), false), Context.CharTy),
+                                                     TemplateArgumentLocInfo()));
+    }
+    return SpecializeClassTemplate(*this, StdStringLiteralCache, &TemplateArgs, Loc);
+}
+
+ExprResult
+Sema::CreateStringLiteralObject(QualType Ty, SourceLocation Loc) {
+    CXXRecordDecl *StdStringViewSpecDecl = Ty.getTypePtr()->getAsCXXRecordDecl();
+    CXXConstructorDecl *CtorDecl = LookupDefaultConstructor(StdStringViewSpecDecl);
+    TypeSourceInfo* TInfo = Context.CreateTypeSourceInfo(Ty);
+    MarkFunctionReferenced(CtorDecl->getLocation(), CtorDecl);
+    CXXTemporaryObjectExpr *TempObjExpr = new (Context) CXXTemporaryObjectExpr(
+                Context, CtorDecl, Ty,
+                TInfo, {}, SourceRange(Loc),
+                /*HadMultipleCandidates=*/ false,
+                /*isListInitialization= */ false,
+                /*isStdInitListInitialization=*/ false,
+                /*RequiresZeroInit=     */ false);
+    return TempObjExpr;
 }
 
 ExprResult
@@ -363,7 +424,7 @@ Sema::getReflectExprTypeforDecl(const Decl *DeclPtr, SourceLocation Loc) {
         TargetClassType = "meta_namespace";
     else if (isa<FieldDecl>(DeclPtr))
         TargetClassType = "meta_field";
-    else if (isa<CXXMethodDecl>(DeclPtr))
+    else if (isa<CXXMethodDecl>(DeclPtr) && !llvm::dyn_cast<CXXMethodDecl>(DeclPtr)->isStatic())
         TargetClassType = "meta_method";
     else if (isa<FunctionDecl>(DeclPtr))
         TargetClassType = "meta_function";
@@ -454,21 +515,20 @@ Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LP
         TransformedArgs.push_back(TransformedArg);
     }
     TransformedArgs[0]->EvaluateAsInt(IntrinsicID, Context);
-    llvm::outs() << "ID: " << (RI_SourceFile==IntrinsicID.getExtValue()) << "\n";
     switch (static_cast<ReflectionIntrinsicsID>(IntrinsicID.getExtValue())) {
         default:
             llvm_unreachable("Unknown reflection intrinsic ID");
         break;
         /* name properties */
         case RI_Name:
-            ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
+            ResultTy = Context.DependentTy;
             break;
         case RI_IsNamed:
             ResultTy = Context.BoolTy;
             break;
          /* type support */
         case RI_TypeName:
-            ResultTy = Context.getTagDeclType(getStdStringView(KWLoc));
+            ResultTy = Context.DependentTy;
             break;
         /* context traversal */
         case RI_ParentDecl:
@@ -511,6 +571,12 @@ Sema::ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LP
             break;
     }
     return new (Context) ReflectionIntrinsicExpr(Context, KWLoc, LParenLoc, RParenLoc, TransformedArgs, ResultTy);
+}
+
+ExprResult
+Sema::ActOnStrLitExpression(const llvm::StringRef& String, SourceLocation Loc) {
+    QualType Ty = BuildStdStringLiteral(String, Loc);
+    return CreateStringLiteralObject(Ty, Loc);
 }
 
 ExprResult

@@ -3296,6 +3296,22 @@ Parser::ParseReflectionIntrinsicExpression() {
 }
 
 ExprResult
+Parser::ParseStrLitExpression() {
+    assert(Tok.is(tok::kw_strlit) && "Not a strlit expression");
+    SourceLocation KWLoc = ConsumeToken();
+    BalancedDelimiterTracker Tracker(*this, tok::l_paren);
+    if (Tracker.expectAndConsume(diag::err_expected, "("))
+        return ExprError();
+    ExprResult Res = ParseStringLiteralExpression();
+    if (Tracker.consumeClose())
+        return ExprError();
+    if (Res.isInvalid())
+        return ExprError();
+    StringLiteral *Str = Res.getAs<StringLiteral>();
+    return Actions.ActOnStrLitExpression(Str->getString(), KWLoc);
+}
+
+ExprResult
 Parser::ParseIdExprExpression() {
     assert(Tok.is(tok::kw_idexpr) && "Not a idexpr expression");
     return ExprError();

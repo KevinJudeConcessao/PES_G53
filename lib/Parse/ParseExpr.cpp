@@ -1173,6 +1173,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw_idexpr:
     Res = ParseIdExprExpression();
     break;
+  case tok::kw_strlit:
+    Res = ParseStrLitExpression();
+    break;
 
   case tok::ampamp: {      // unary-expression: '&&' identifier
     SourceLocation AmpAmpLoc = ConsumeToken();
