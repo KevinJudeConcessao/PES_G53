@@ -2137,6 +2137,16 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
   }
 })
 
+DEF_TRAVERSE_STMT(CXXForConstexprStmt, {
+   if (!getDerived().shouldVisitImplicitCode()) {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopBody());
+    // Visit everything else only if shouldVisitImplicitCode().
+    ShouldVisitChildren = false;
+   }
+})
+
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
   TRY_TO(TraverseDeclarationNameInfo(S->getNameInfo()));

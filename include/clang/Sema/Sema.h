@@ -3723,6 +3723,11 @@ public:
                                   SourceLocation ColonLoc, Expr *Collection,
                                   SourceLocation RParenLoc,
                                   BuildForRangeKind Kind);
+  StmtResult ActOnForConstexprStmt(Scope *S, SourceLocation ForLoc,
+                                   SourceLocation ConstexprLoc,
+                                   Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *Collection,
+                                   SourceLocation RParenLoc);
   StmtResult BuildCXXForRangeStmt(SourceLocation ForLoc,
                                   SourceLocation CoawaitLoc,
                                   SourceLocation ColonLoc,
@@ -3731,8 +3736,12 @@ public:
                                   Stmt *LoopVarDecl,
                                   SourceLocation RParenLoc,
                                   BuildForRangeKind Kind);
+  StmtResult BuildForConstexprStmt(SourceLocation ForLoc,
+                                   SourceLocation ConstexprLoc,
+                                   SourceLocation ColonLoc, Stmt *LoopVarDecl,
+                                   Stmt *RangeVarDecl, SourceLocation RParenLoc);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
-
+  StmtResult FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body);
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
                            LabelDecl *TheDecl);
@@ -4225,7 +4234,8 @@ public:
   ExprResult ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
                                                 SmallVector<Expr*, 2> IntrinsicArgs, SourceLocation RParenLoc);
   ExprResult ActOnStrLitExpression(const llvm::StringRef& String, SourceLocation Loc);
-  ExprResult ActOnIdExprExpression(SmallVector<Expr *, 2> IdExprArgs);
+  ExprResult ActOnIdExprExpression(QualType Ty, SourceLocation Loc);
+  ExprResult BuildIdExprExpression(llvm::StringRef Id, SourceLocation Loc);
   ExprResult BuildReflectionIntrinsicExpression();
 
   // This struct is for use by ActOnMemberAccess to allow
@@ -4501,6 +4511,8 @@ public:
 
   NamespaceDecl *lookupStdExperimentalNamespace();
   NamespaceDecl *lookupStdReflectionNamespace();
+  QualType SpecializeClassTemplate(ClassTemplateDecl *TemplateDecl, TemplateArgumentListInfo *TemplateArgs,
+                                   SourceLocation Loc);
   QualType BuildStdTuple(TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc);
   QualType BuildStdStringLiteral(const llvm::StringRef& String, SourceLocation Loc);
   QualType BuildReflectionObjectType(const StringRef &TargetMeta, TemplateArgument IntTemplateArg,
@@ -4512,6 +4524,7 @@ public:
   ExprResult CreateTupleObject(QualType Ty, llvm::MutableArrayRef<Expr*> Args, SourceLocation Loc);
   ExprResult CreateMetaDeclObject(QualType MetaDeclObjectType, SourceLocation Loc);
   CXXRecordDecl *getStdStringView(SourceLocation Loc);
+  bool isStdStringLiteral(QualType Ty, SourceLocation Loc);
 
   CXXRecordDecl *getStdBadAlloc() const;
   EnumDecl *getStdAlignValT() const;

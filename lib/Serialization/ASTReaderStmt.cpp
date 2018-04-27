@@ -1229,6 +1229,18 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Record.readSubStmt());
 }
 
+void ASTStmtReader::VisitCXXForConstexprStmt(CXXForConstexprStmt *S) {
+  VisitStmt(S);
+  S->ForLoc = ReadSourceLocation();
+  S->ConstexprLoc = ReadSourceLocation();
+  S->ColonLoc = ReadSourceLocation();
+  S->RParenLoc = ReadSourceLocation();
+  S->LoopVarStmt =  llvm::dyn_cast<DeclStmt>(Record.readSubStmt());
+  S->RangeStmt = llvm::dyn_cast<DeclStmt>(Record.readSubStmt());
+  S->LoopBody = Record.readStmt();
+  S->NumExpansions = Record.readAPSInt();
+}
+
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   S->KeywordLoc = ReadSourceLocation();
@@ -3454,6 +3466,9 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_CXX_FOR_RANGE:
       S = new (Context) CXXForRangeStmt(Empty);
+      break;
+    case STMT_CXX_FOR_CONSTEXPR:
+      S = new (Context) CXXForConstexprStmt(Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

@@ -274,12 +274,6 @@ Retry:
     Res = ParseReturnStatement();
     SemiError = "co_return";
     break;
-
-
-#if 0
-  case tok::kw___loop_unroll:
-    return ParseLoopUnrollStatement();
-#endif
   case tok::kw___clang_compiler_error: // Clang extension: __clang_compiler_error
     Res = ParseClangDiagnosticsStatement();
     SemiError = "__clang_compiler_error";
@@ -1552,8 +1546,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
   SourceLocation CoawaitLoc;
+  SourceLocation ConstExprLoc;
   if (Tok.is(tok::kw_co_await))
     CoawaitLoc = ConsumeToken();
+  else if (Tok.is(tok::kw_constexpr))
+    ConstExprLoc = ConsumeToken();
 
   if (Tok.isNot(tok::l_paren)) {
     Diag(Tok, diag::err_expected_lparen_after) << "for";
@@ -1766,6 +1763,12 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     CoawaitLoc = SourceLocation();
   }
 
+  // 'constexpr' can only be used for a range-based for statement.
+  if (ConstExprLoc.isValid() && !ForRange) {
+      Diag(ConstExprLoc, diag::err_for_constexpr_not_range_for);
+      ConstExprLoc = SourceLocation();
+  }
+
   // We need to perform most of the semantic analysis for a C++0x for-range
   // statememt before parsing the body, in order to be able to deduce the type
   // of an auto-typed loop variable.
@@ -1775,10 +1778,15 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   if (ForRange) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInit.RangeExpr.get());
-    ForRangeStmt = Actions.ActOnCXXForRangeStmt(
-        getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
-        ForRangeInit.ColonLoc, CorrectedRange.get(),
-        T.getCloseLocation(), Sema::BFRK_Build);
+    if (ConstExprLoc.isInvalid())
+        ForRangeStmt = Actions.ActOnCXXForRangeStmt(
+            getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
+            ForRangeInit.ColonLoc, CorrectedRange.get(),
+            T.getCloseLocation(), Sema::BFRK_Build);
+    else
+        ForRangeStmt = Actions.ActOnForConstexprStmt(
+            getCurScope(), ForLoc, ConstExprLoc, FirstPart.get(),
+            ForRangeInit.ColonLoc, CorrectedRange.get(), T.getCloseLocation());
 
   // Similarly, we need to do the semantic analysis for a for-range
   // statement immediately in order to close over temporaries correctly.
@@ -1832,8 +1840,12 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
    return Actions.FinishObjCForCollectionStmt(ForEachStmt.get(),
                                               Body.get());
 
-  if (ForRange)
-    return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+  if (ForRange) {
+    if (ConstExprLoc.isInvalid())
+        return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+    else
+        return Actions.FinishForConstexprStmt(ForRangeStmt.get(), Body.get());
+  }
 
   return Actions.ActOnForStmt(ForLoc, T.getOpenLocation(), FirstPart.get(),
                               SecondPart, ThirdPart, T.getCloseLocation(),
@@ -2329,48 +2341,3 @@ Parser::ParseClangDiagnosticsStatement() {
     //ExpectAndConsumeSemi(diag::err_expected);
     return StmtEmpty();
 }
-#if 0
-DeclGroupPtrTy
-Parser::ParseLoopUnrollDeclaration() {
-
-}
-
-StmtResult
-Parser::ParseLoopUnrollStatement() {
-
-    assert(Tok::is(tok::kw___loop_unroll) && "Not a loop-unroll stmt!");
-    if(!getLangOpts().CPlusPlus)
-        return StmtError(Diag(Tok, diag::err_compat_loop_unrolling));
-    SourceLocation LoopUnrollLoc = ConsumeToken();
-    if (Tok.isNot(tok::l_paren)) {
-        Diag(Tok, diag::err_expected_lparen_after) << "__loop_unroll";
-        SkipUntil(tok::semi);
-        return StmtError();
-    }
-    BalancedDelimiterTracker ParenTracker(*this, tok::l_paren);
-    ColonProtectionRAIIObject ColonProtection(*this, ColonIsSacred);
-    ParenTracker.consumeOpen();
-    ParseScope LoopUnrollScope(this, Scope::ScopeFlags::DeclScope |
-                                     Scope::ScopeFlags::ControlScope,
-                                     true, /*EnteredScope */
-                                     true, /*BeforeCompoundStmt*/);
-    SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
-    ParsedAttributesWithRange Attributes(AttrFactory);
-    MaybeParseCXX11Attributes(Attributes);
-    LoopUnrollInit LUInit;
-    DeclGroupPtrTy DGPtr = ParseLoopUnrollDeclaration(&LUInit, DeclEnd, Attributes);
-    StmtResult DeclarationPart = Actions.ActOnDeclStmt(DGPtr, DeclStart, DeclEnd);
-    ParenTracker.consumeClose();
-    for(int x: {1, 2, 3, 4})
-    {
-        /*this part of the code deals with the loop body expansion. */
-        ParseScope LoopUnrollBodyScope(this, Scope::ScopeFlags::DeclScope |
-                                       Scope::ScopeFlags::ControlScope,
-                                       true, /*EnteredScope */
-                                       true, /*BeforeCompoundStmt*/);
-    }
-
-    return StmtError();
-}
-
-   #endif

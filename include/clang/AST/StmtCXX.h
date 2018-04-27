@@ -210,6 +210,46 @@ public:
   }
 };
 
+class CXXForConstexprStmt : public Stmt {
+private:
+    SourceLocation ForLoc;
+    SourceLocation ConstexprLoc;
+    SourceLocation ColonLoc;
+    SourceLocation RParenLoc;
+    friend class ASTStmtReader;
+    friend class ASTStmtWriter;
+    DeclStmt *LoopVarStmt;
+    DeclStmt *RangeStmt;
+    Stmt *LoopBody;
+    llvm::APSInt NumExpansions;
+    llvm::SmallVector<Stmt*, 4> ExpandedStmts;
+public:
+   CXXForConstexprStmt(DeclStmt *LoopVarStmt, DeclStmt *RangeStmt, Stmt *LoopBody,
+                       const llvm::APSInt& NumExpansions, SourceLocation ForLoc, SourceLocation ConstexprLoc,
+                       SourceLocation ColonLoc, SourceLocation RParenLoc)
+       : Stmt(CXXForConstexprStmtClass), ForLoc(ForLoc), ConstexprLoc(ConstexprLoc), ColonLoc(ColonLoc), RParenLoc(RParenLoc),
+         LoopVarStmt(LoopVarStmt), RangeStmt(RangeStmt), LoopBody(LoopBody), NumExpansions(NumExpansions) {}
+   CXXForConstexprStmt(EmptyShell Empty)
+       : Stmt(CXXForConstexprStmtClass, Empty) {}
+   SourceLocation getForLoc() const { return ForLoc; }
+   SourceLocation getConstexprLoc() const { return ConstexprLoc; }
+   SourceLocation getColonLoc() const  { return ColonLoc; }
+   SourceLocation getRParenLoc() const { return RParenLoc; }
+   SourceLocation getLocStart() const { return ForLoc; }
+   SourceLocation getLocEnd() const { return RParenLoc; }
+   static bool classof(const Stmt* T) {
+       return T->getStmtClass() == CXXForConstexprStmtClass;
+   }
+   DeclStmt *getLoopVarStmt() { return LoopVarStmt; }
+   DeclStmt *getRangeStmt() { return RangeStmt; }
+   Stmt *getLoopBody() { return LoopBody; }
+   void setLoopBody(Stmt *LB) { LoopBody = LB; }
+   const llvm::APSInt& getNumExpansions() { return NumExpansions; }
+   void addExpandedStmt(Stmt *ExpandedStmt) { ExpandedStmts.push_back(ExpandedStmt); }
+   const llvm::SmallVectorImpl<Stmt*>& getExpandedStmts() { return ExpandedStmts; }
+   child_range children() { return child_range(child_iterator(), child_iterator()); }
+};
+
 /// \brief Representation of a Microsoft __if_exists or __if_not_exists
 /// statement with a dependent name.
 ///

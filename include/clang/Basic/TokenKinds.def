@@ -418,7 +418,7 @@ KEYWORD(__clang_compiler_error      ,  KEYCXX)
 KEYWORD(__clang_compiler_warning    ,  KEYCXX)
 
 // Clang Extensions for compile-time loop unrolling
-KEYWORD(__loop_unroll               ,  KEYCXX)
+KEYWORD(for_constexpr              ,  KEYCXX)
 
 // MS Extensions
 KEYWORD(__FUNCDNAME__               , KEYMS)

@@ -1162,4 +1162,7 @@ def err_for_co_await_not_range_for : Error<
   "'co_await' modifier can only be applied to range-based for loop">;
 }
 
+def err_for_constexpr_not_range_for : Error<
+  "'constexpr' modifier can only be applied to range-based for loop">;
+
 } // end of Parser diagnostics

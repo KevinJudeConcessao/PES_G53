@@ -1986,7 +1986,9 @@ def err_auto_init_list_from_c : Error<
 def err_auto_bitfield : Error<
   "cannot pass bit-field as __auto_type initializer in C">;
 
-// C++ type reflection support\
+// C++ type reflection support
+def err_idexpr_invalid_type: Error<
+ "idexpr expression expects a std::string_literal<char...>; %0 found">;
 def err_reflected_entity_invalid: Error<
  "the reflection object does not refer to a valid entity, and hence cannot be queried">;
 def err_reflect_expr_type_id_not_found: Error<
@@ -2008,6 +2010,8 @@ def err_malformed_std_tuple : Error<
    "std::tuple must be a class template with a single parameter pack">;
 def err_implied_std_string_view_not_found : Error<
    "std::string_view was not found, enable C++17 support and include 'string_view' ">;
+def err_multiple_decls_in_for_constexpr : Error<
+   "multiple declarations found in for constexpr declaration">;
 
 // C++1y decltype(auto) type
 def err_decltype_auto_invalid : Error<

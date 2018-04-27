@@ -323,6 +323,10 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   if (Policy.IncludeNewlines) OS << "\n";
 }
 
+void StmtPrinter::VisitCXXForConstexprStmt(CXXForConstexprStmt *Node) {
+    // #Not implemented... Fixit.
+}
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())

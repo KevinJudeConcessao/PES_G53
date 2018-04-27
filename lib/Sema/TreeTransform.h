@@ -2816,9 +2816,18 @@ public:
         break;
       case RI_Value: {
           ValueDecl *VDecl = const_cast<ValueDecl*>(llvm::dyn_cast<ValueDecl>(D));
-          Result = new (getSema().Context) DeclRefExpr(VDecl, /*RefersToEnclosingVariableOrCapture */ false, Ty,
-                                                       VK_RValue, KWLoc);
-
+          DeclRefExpr *DRExpr =  new (getSema().Context) DeclRefExpr(VDecl, /*RefersToEnclosingVariableOrCapture */ false, Ty,
+                                                       VK_LValue, KWLoc);
+          if (llvm::isa<EnumConstantDecl>(VDecl))
+            Result = DRExpr;
+          else if (llvm::isa<VarDecl>(VDecl)) {
+            getSema().MarkDeclRefReferenced(DRExpr);
+            Result = DRExpr;
+          }
+          else if (llvm::isa<FunctionDecl>(VDecl)) {
+            Result = new (getSema().Context) UnaryOperator(DRExpr, UO_AddrOf, getSema().Context.getPointerType(Ty),
+                                                                    ExprValueKind::VK_RValue, ExprObjectKind::OK_Ordinary, KWLoc);
+          }
       }
         break;
       default:
@@ -7313,9 +7322,9 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
            if (llvm::isa<EnumConstantDecl>(VDecl))
                ExprType = VDecl->getType();
            else if (llvm::isa<VarDecl>(VDecl)) {
-              ExprType = getSema().Context.getLValueReferenceType(VDecl->getType());
+              ExprType = VDecl->getType();
            } else if (llvm::isa<FunctionDecl>(VDecl)) {
-               ExprType = getSema().Context.getPointerType(VDecl->getType());
+               ExprType = VDecl->getType();
            }
         }
     }
@@ -7649,6 +7658,12 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
     return S;
 
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXForConstexprStmt(CXXForConstexprStmt *S) {
+    return S;
 }
 
 template<typename Derived>

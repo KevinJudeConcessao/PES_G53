@@ -31,6 +31,7 @@
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
+#include "clang/Sema/Template.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -2077,6 +2078,75 @@ StmtResult Sema::ActOnCXXForRangeStmt(Scope *S, SourceLocation ForLoc,
                               DS, RParenLoc, Kind);
 }
 
+StmtResult Sema::ActOnForConstexprStmt(Scope *S, SourceLocation ForLoc,
+                                       SourceLocation ConstexprLoc,
+                                       Stmt *LoopVar, SourceLocation ColonLoc,
+                                       Expr *Collection, SourceLocation RParenLoc) {
+    if (!LoopVar)
+        return StmtError();
+    DeclStmt *DS = llvm::dyn_cast<DeclStmt>(LoopVar);
+    assert(DS && "first part of the for constexpr not a decl stmt");
+    if (!DS->isSingleDecl()) {
+        Diag(ForLoc, diag::err_multiple_decls_in_for_constexpr);
+        return StmtError();
+    }
+    SourceLocation RangeVarLoc = Collection->getLocStart();
+    IdentifierInfo *II = &PP.getIdentifierTable().get("__range");
+    TypeSourceInfo *TInfo = Context.getTrivialTypeSourceInfo(Context.getAutoRRefDeductType(), RangeVarLoc);
+    VarDecl *RangeVarDecl = VarDecl::Create(Context, CurContext, RangeVarLoc, RangeVarLoc, II,
+                                            Context.getAutoRRefDeductType(), TInfo,StorageClass::SC_None);
+    AddInitializerToDecl(RangeVarDecl, Collection, /*DirectInit=*/false);
+    FinalizeDeclaration(RangeVarDecl);
+    CurContext->addHiddenDecl(RangeVarDecl);
+    StmtResult RangeDecl = ActOnDeclStmt(BuildDeclaratorGroup(llvm::MutableArrayRef<Decl*>((Decl **)&RangeVarDecl, 1)),
+                                         RangeVarLoc, RangeVarLoc);
+    if (RangeDecl.isInvalid()) {
+        RangeVarDecl->setInvalidDecl();
+        return StmtError();
+    }
+    return BuildForConstexprStmt(ForLoc, ConstexprLoc, ColonLoc, DS, RangeDecl.get(), RParenLoc);
+}
+
+static bool GetTupleSize(Sema &S, QualType TupleType, llvm::APSInt& TupleSize, SourceLocation Loc) {
+    NamespaceDecl *StdNamespaceDecl = S.getStdNamespace();
+    IdentifierInfo *II = &S.PP.getIdentifierTable().get("tuple_size");
+    LookupResult StdTupleSizeResult(S, DeclarationNameInfo(DeclarationName(II), Loc), Sema::LookupTagName);
+    S.LookupQualifiedName(StdTupleSizeResult, StdNamespaceDecl);
+    ClassTemplateDecl *StdTupleSizeDecl = StdTupleSizeResult.getAsSingle<ClassTemplateDecl>();
+    if (!StdTupleSizeDecl)
+        return false;
+    TemplateArgument TemplateArg(TupleType.getNonReferenceType());
+    TemplateArgumentListInfo ArgListInfo(Loc, Loc);
+    ArgListInfo.addArgument(TemplateArgumentLoc(TemplateArg, S.Context.getTrivialTypeSourceInfo(TupleType.getNonReferenceType(), Loc)));
+    QualType StdTupleSizeSpecType = S.SpecializeClassTemplate(StdTupleSizeDecl, &ArgListInfo, Loc);
+    CXXRecordDecl *StdTupleSizeSpecDecl = StdTupleSizeSpecType->getAsCXXRecordDecl();
+    StdTupleSizeSpecDecl->dump();
+    IdentifierInfo *ValueII = &S.PP.getIdentifierTable().get("value");
+    LookupResult ValueResult(S, DeclarationNameInfo(DeclarationName(ValueII), Loc), Sema::LookupOrdinaryName);
+    S.LookupQualifiedName(ValueResult, StdTupleSizeSpecDecl);
+    ValueDecl *VDecl = ValueResult.getAsSingle<ValueDecl>();
+    DeclRefExpr *DRE = new (S.Context) DeclRefExpr(VDecl, /*ReferToEnclosingVariableOrCapture*/ false,
+                                                 VDecl->getType(), VK_LValue, Loc);
+    S.MarkDeclRefReferenced(DRE);
+    bool EvalStatus = DRE->isIntegerConstantExpr(TupleSize, S.Context);
+    S.MaybeODRUseExprs.clear();
+    return EvalStatus;
+}
+
+StmtResult Sema::BuildForConstexprStmt(SourceLocation ForLoc, SourceLocation ConstexprLoc,
+                                       SourceLocation ColonLoc, Stmt *LoopVarDecl, Stmt *RangeVarDecl,
+                                       SourceLocation RParenLoc) {
+    DeclStmt *LoopVarDeclStmt = llvm::dyn_cast<DeclStmt>(LoopVarDecl);
+    DeclStmt *RangeVarDeclStmt = llvm::dyn_cast<DeclStmt>(RangeVarDecl);
+    VarDecl *RangeDecl = llvm::dyn_cast<VarDecl>(RangeVarDeclStmt->getSingleDecl());
+    llvm::APSInt NumExpansions = llvm::APSInt::get(0);
+    GetTupleSize(*this, RangeDecl->getType(), NumExpansions, ForLoc);
+    llvm::outs() << "Num Expansions: " << NumExpansions.getExtValue() << "\n";
+    return new (Context) CXXForConstexprStmt(LoopVarDeclStmt, RangeVarDeclStmt,
+                                             /*LoopBody=*/ nullptr, NumExpansions,
+                                             ForLoc, ConstexprLoc, ColonLoc, RParenLoc);
+}
+
 /// \brief Create the initialization, compare, and increment steps for
 /// the range-based for loop expression.
 /// This function does not handle array-based for loops,
@@ -2735,6 +2805,88 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
   return S;
 }
 
+StmtResult Sema::FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body) {
+    if (!ForConstexpr || !Body)
+        return StmtError();
+    CXXForConstexprStmt *ForStmt = llvm::dyn_cast<CXXForConstexprStmt>(ForConstexpr);
+    SourceLocation Loc = ForStmt->getLocStart();
+    ForStmt->setLoopBody(Body);
+    DeclStmt *RangeDeclStmt = ForStmt->getRangeStmt();
+    VarDecl *RangeDecl = llvm::dyn_cast<VarDecl>(RangeDeclStmt->getSingleDecl());
+    DeclStmt *LoopVarStmt = ForStmt->getLoopVarStmt();
+    VarDecl *LoopVar = llvm::dyn_cast<VarDecl>(LoopVarStmt->getSingleDecl());
+
+    QualType StdGetArgType = RangeDecl->getType().getNonReferenceType();
+    if (RangeDecl->getInit()->isTypeDependent())
+        return ForStmt;
+    if (ForStmt->getNumExpansions().isNullValue())
+        return new (Context) CompoundStmt(ForConstexpr->getLocStart());
+
+    /*
+     * Steps:
+     * Lookup for the class __tuple_get_helper -- done
+     * Specialize the class with appropriate parameters -- done
+     * Lookup for the function inside the class -- done
+     * Write DeclRef statement for the function -- done
+     * Write DeclRef statement for the parameter -- done
+     * Write a call statement for the above in the loop -- done */
+
+    IdentifierInfo *StdGetHelperClassId = &PP.getIdentifierTable().get("__tuple_get_helper");
+    DeclarationNameInfo StdGetHelperDNI(DeclarationName(StdGetHelperClassId), Loc);
+    LookupResult StdGetHelperResult(*this, StdGetHelperDNI, Sema::LookupOrdinaryName);
+    LookupQualifiedName(StdGetHelperResult, getStdNamespace());
+    ClassTemplateDecl *StdGetHelperCTD = StdGetHelperResult.getAsSingle<ClassTemplateDecl>();
+
+    llvm::SmallVector<Stmt*, 8> CompoundStatements;
+    CompoundStatements.push_back(RangeDeclStmt);
+
+    for (int64_t counter = 0; counter < ForStmt->getNumExpansions().getExtValue(); ++ counter) {
+        TemplateArgumentListInfo ArgListInfo(Loc, Loc);
+        TemplateArgument IndexArg(Context, llvm::APSInt::get(counter), Context.getSizeType());
+        TemplateArgument TupleTypeArg(StdGetArgType);
+        TemplateArgumentLoc IndexArgLoc(IndexArg, TemplateArgumentLocInfo(Context.getTrivialTypeSourceInfo(Context.getSizeType(), Loc)));
+        TemplateArgumentLoc TupleTypeArgLoc(TupleTypeArg, TemplateArgumentLocInfo(Context.getTrivialTypeSourceInfo(StdGetArgType, Loc)));
+        ArgListInfo.addArgument(IndexArgLoc);
+        ArgListInfo.addArgument(TupleTypeArgLoc);
+        QualType Spec = SpecializeClassTemplate(StdGetHelperCTD, &ArgListInfo, Loc);
+        CXXRecordDecl *SpecDecl = Spec->getAsCXXRecordDecl();
+
+        IdentifierInfo *ValueId = &PP.getIdentifierTable().get("__value");
+        DeclarationNameInfo ValueIdDNI(DeclarationName(ValueId), Loc);
+        LookupResult ValueResult(*this, ValueIdDNI, Sema::LookupMemberName);
+        LookupQualifiedName(ValueResult, SpecDecl);
+        CXXMethodDecl *ValueMethodDecl = ValueResult.getAsSingle<CXXMethodDecl>();
+
+        DeclRefExpr *FuncDRE = DeclRefExpr::Create(Context, ValueMethodDecl->getQualifierLoc(), SourceLocation(),
+                                                   ValueMethodDecl, /*RefersToEnclosingVatiableorCapture*/ false,
+                                                   ValueIdDNI, ValueMethodDecl->getType(), VK_LValue);
+
+        DeclRefExpr *ArgDRE = DeclRefExpr::Create(Context, RangeDecl->getQualifierLoc(), SourceLocation(),
+                                                  RangeDecl,  /*RefersToEnclosingVatiableorCapture*/ false,
+                                                  DeclarationNameInfo(RangeDecl->getDeclName(), Loc),
+                                                  StdGetArgType, VK_XValue);
+        MarkDeclRefReferenced(FuncDRE);
+        Expr* Args[] = { ArgDRE };
+        ExprResult Call = ActOnCallExpr(getCurScope(), FuncDRE, Loc, Args, Loc);
+
+        IdentifierInfo *II = &PP.getIdentifierTable().get(LoopVar->getName());
+        QualType NewLoopVarType = Call.get()->getType();
+        NewLoopVarType.dump();
+        VarDecl *NewLoopVarDecl = VarDecl::Create(Context, CurContext, ForStmt->getLoopVarStmt()->getLocStart(),
+                                                  ForStmt->getLoopVarStmt()->getLocEnd(), II, NewLoopVarType,
+                                                  Context.getTrivialTypeSourceInfo(NewLoopVarType), SC_None);
+        AddInitializerToDecl(NewLoopVarDecl, Call.get(), /*DirectInit*/ false);
+        FinalizeDeclaration(NewLoopVarDecl);
+        StmtResult NewLoopVarStmt = ActOnDeclStmt(BuildDeclaratorGroup(llvm::MutableArrayRef<Decl*>((Decl **)&NewLoopVarDecl, 1)),
+                                                  ForStmt->getLoopVarStmt()->getLocStart(), ForStmt->getLoopVarStmt()->getLocEnd());
+        Stmt *LoopBodyExpansionStmts[] = { NewLoopVarStmt.get(), ForStmt->getLoopBody() };
+        CompoundStmt *LoopBodyExpansion = new (Context) CompoundStmt(Context, LoopBodyExpansionStmts, ForStmt->getLocStart(), ForStmt->getLocEnd());
+        CompoundStatements.push_back(LoopBodyExpansion);
+    }
+
+    Stmt *FinalStmt = new (Context) CompoundStmt(Context, llvm::makeArrayRef<Stmt*>(CompoundStatements), ForStmt->getLocStart(), ForStmt->getLocEnd());
+    return FinalStmt;
+}
 StmtResult Sema::ActOnGotoStmt(SourceLocation GotoLoc,
                                SourceLocation LabelLoc,
                                LabelDecl *TheDecl) {

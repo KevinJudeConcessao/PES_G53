@@ -1223,6 +1223,19 @@ void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   Code = serialization::STMT_CXX_FOR_RANGE;
 }
 
+void ASTStmtWriter::VisitCXXForConstexprStmt(CXXForConstexprStmt *S) {
+  Visit(S);
+  Record.AddSourceLocation(S->getForLoc());
+  Record.AddSourceLocation(S->getConstexprLoc());
+  Record.AddSourceLocation(S->getColonLoc());
+  Record.AddSourceLocation(S->getRParenLoc());
+  Record.AddStmt(S->getLoopVarStmt());
+  Record.AddStmt(S->getRangeStmt());
+  Record.AddStmt(S->getLoopBody());
+  Record.AddAPSInt(S->getNumExpansions());
+  Code = serialization::STMT_CXX_FOR_CONSTEXPR;
+}
+
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   Record.AddSourceLocation(S->getKeywordLoc());

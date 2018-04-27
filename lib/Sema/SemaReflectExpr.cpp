@@ -65,6 +65,8 @@ LookupStdReflectionDecl(Sema &S, StringRef ReflectionSupportClassName, SourceLoc
     return DeclTemplate;
 }
 
+#if 0
+
 static FunctionDecl*
 InstantiateFunctionTemplateDecl(Sema &SemaRef, FunctionTemplateDecl *FTD, DeclContext *Context,
                                 llvm::ArrayRef<TemplateArgument> Arguments) {
@@ -87,6 +89,7 @@ InstantiateFunctionTemplateDecl(Sema &SemaRef, FunctionTemplateDecl *FTD, DeclCo
     }
     return nullptr;
 }
+#endif
 
 static StringLiteral*
 CreateStringLiteral(Sema &S, StringRef NewStringLiteral, SourceLocation Loc) {
@@ -129,18 +132,18 @@ LookupStdTupleTemplate(Sema &S, SourceLocation Loc) {
     return StdTupleTemplate;
 }
 
-static QualType
-SpecializeClassTemplate(Sema &S, ClassTemplateDecl *TemplateDecl, TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc) {
+QualType
+Sema::SpecializeClassTemplate(ClassTemplateDecl *TemplateDecl, TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc) {
     if (!TemplateDecl) {
         return QualType();
     }
     SmallVector<TemplateArgument, 4> Converted;
     void *InsertPos = nullptr;
-    S.CheckTemplateArgumentList(TemplateDecl, TemplateDecl->getLocStart(), *TemplateArgs, false, Converted, true);
+    CheckTemplateArgumentList(TemplateDecl, TemplateDecl->getLocStart(), *TemplateArgs, false, Converted, true);
     ClassTemplateSpecializationDecl* TemplateSpecializationDecl
             = TemplateDecl->findSpecialization(Converted, InsertPos);
     if (!TemplateSpecializationDecl) {
-        TemplateSpecializationDecl = ClassTemplateSpecializationDecl::Create(S.Context,
+        TemplateSpecializationDecl = ClassTemplateSpecializationDecl::Create(Context,
                                                                              TemplateDecl->getTemplatedDecl()->getTagKind(),
                                                                              TemplateDecl->getDeclContext(),
                                                                              TemplateDecl->getTemplatedDecl()->getLocStart(),
@@ -153,13 +156,13 @@ SpecializeClassTemplate(Sema &S, ClassTemplateDecl *TemplateDecl, TemplateArgume
             TemplateArgumentList ArgList(TemplateArgumentList::OnStack, Converted);
             MultiLevelTemplateArgumentList TemplateArgList;
             TemplateArgList.addOuterTemplateArguments(&ArgList);
-            S.InstantiateAttrsForDecl(TemplateArgList, TemplateDecl->getTemplatedDecl(), TemplateSpecializationDecl);
+            InstantiateAttrsForDecl(TemplateArgList, TemplateDecl->getTemplatedDecl(), TemplateSpecializationDecl);
         }
     }
-    S.RequireCompleteType(TemplateDecl->getLocation(), S.Context.getTypeDeclType(TemplateSpecializationDecl),
+    RequireCompleteType(TemplateDecl->getLocation(), Context.getTypeDeclType(TemplateSpecializationDecl),
                           diag::err_incomplete_type);
-    return S.Context.getTemplateSpecializationType(TemplateName(TemplateDecl), *TemplateArgs,
-                                                   S.Context.getTypeDeclType(TemplateSpecializationDecl));
+    return Context.getTemplateSpecializationType(TemplateName(TemplateDecl), *TemplateArgs,
+                                                   Context.getTypeDeclType(TemplateSpecializationDecl));
 }
 
 static CXXRecordDecl*
@@ -224,7 +227,7 @@ Sema::BuildReflectionObjectType(const StringRef &TargetMeta, TemplateArgument In
     ClassTemplateDecl *TargetTemplateDecl = LookupStdReflectionDecl(*this, TargetMeta, Loc);
     TemplateArgumentListInfo ArgInfo(Loc, Loc);
     ArgInfo.addArgument(TemplateArgumentLoc(IntTemplateArg, TemplateArgumentLocInfo()));
-    return SpecializeClassTemplate(*this, TargetTemplateDecl, &ArgInfo, Loc);
+    return SpecializeClassTemplate(TargetTemplateDecl, &ArgInfo, Loc);
 }
 
 QualType
@@ -234,7 +237,7 @@ Sema::BuildStdTuple(TemplateArgumentListInfo *TemplateArgs, SourceLocation Loc) 
         if (!StdTupleTemplate)
             return QualType();
     }
-    return SpecializeClassTemplate(*this, StdTupleTemplate, TemplateArgs, Loc);
+    return SpecializeClassTemplate(StdTupleTemplate, TemplateArgs, Loc);
 }
 
 QualType
@@ -249,7 +252,7 @@ Sema::BuildStdStringLiteral(const llvm::StringRef &String, SourceLocation Loc) {
         TemplateArgs.addArgument(TemplateArgumentLoc(TemplateArgument(Context, llvm::APSInt(llvm::APInt(sizeof(char) * 8, *first), false), Context.CharTy),
                                                      TemplateArgumentLocInfo()));
     }
-    return SpecializeClassTemplate(*this, StdStringLiteralCache, &TemplateArgs, Loc);
+    return SpecializeClassTemplate(StdStringLiteralCache, &TemplateArgs, Loc);
 }
 
 ExprResult
@@ -579,7 +582,57 @@ Sema::ActOnStrLitExpression(const llvm::StringRef& String, SourceLocation Loc) {
     return CreateStringLiteralObject(Ty, Loc);
 }
 
+bool
+Sema::isStdStringLiteral(QualType Ty, SourceLocation Loc) {
+   assert(getLangOpts().CPlusPlus && "Looking for std::string_literal<char...> outside of C++.");
+   if (!StdNamespace)
+       return false;
+   ClassTemplateDecl *Template = nullptr;
+   if (const RecordType *RTy = Ty->getAs<RecordType>()) {
+       ClassTemplateSpecializationDecl *Spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(RTy->getDecl());
+       if (!Spec)
+         return false;
+       Template = Spec->getSpecializedTemplate();
+   }
+   else if (const TemplateSpecializationType *TSTy = Ty->getAs<TemplateSpecializationType>())
+       Template = llvm::dyn_cast_or_null<ClassTemplateDecl>(TSTy->getTemplateName().getAsTemplateDecl());
+   if (!Template)
+       return false;
+   if (!StdStringLiteralCache)
+       StdStringLiteralCache = LookupStdStringLiteral(*this, Loc);
+   if (Template->getCanonicalDecl() != StdStringLiteralCache->getCanonicalDecl())
+       return false;
+   return true;
+}
+
 ExprResult
-Sema::ActOnIdExprExpression(SmallVector<Expr*, 2> IdExprArgs) {
-    return ExprError();
+Sema::ActOnIdExprExpression(QualType Ty, SourceLocation Loc) {
+    if (!isStdStringLiteral(Ty, Loc))
+        return ExprError(Diag(Loc, diag::err_idexpr_invalid_type) << Ty.getAsString());
+    llvm::ArrayRef<TemplateArgument> TemplateArgs;
+    if (const TemplateSpecializationType *TSTy = Ty->getAs<TemplateSpecializationType>())
+        TemplateArgs = TSTy->template_arguments();
+    else if (const RecordType *Rty = Ty->getAs<RecordType>()) {
+        ClassTemplateSpecializationDecl *Spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(Rty->getDecl());
+        TemplateArgs = Spec->getTemplateArgs().get(0).getPackAsArray();
+    }
+    llvm::SmallVector<char, 8> Characters;
+    std::transform(TemplateArgs.begin(), TemplateArgs.end(), std::back_inserter(Characters),
+                   [](TemplateArgument Argument) -> char { return static_cast<char>(Argument.getAsIntegral().getExtValue()); });
+    llvm::StringRef Identifier(std::string(Characters.begin(), Characters.end()));
+    llvm::outs() << Identifier;
+    return BuildIdExprExpression(Identifier, Loc);
+}
+
+ExprResult
+Sema::BuildIdExprExpression(llvm::StringRef Id, SourceLocation Loc) {
+    LookupResult IdResult(*this, &PP.getIdentifierTable().get(Id), Loc,
+                                Sema::LookupNameKind::LookupOrdinaryName);
+    LookupName(IdResult, getCurScope());
+    if (!IdResult.isSingleResult())
+        return ExprError(Diag(Loc, diag::err_undeclared_var_use) << Id);
+    ValueDecl *VD = IdResult.getAsSingle<ValueDecl>();
+    DeclRefExpr *E = new (Context) DeclRefExpr(VD, false, VD->getType(), ExprValueKind::VK_LValue, Loc);
+    MarkDeclRefReferenced(E);
+    return E;
 }

@@ -1412,8 +1412,10 @@ namespace clang {
       STMT_CXX_TRY,
       /// \brief A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,
+      /// \brief A CXXForConstexprStmt record.
+      STMT_CXX_FOR_CONSTEXPR,
 
-      /// \brief A CXXOperatorCallExpr record.
+        /// \brief A CXXOperatorCallExpr record.
       EXPR_CXX_OPERATOR_CALL,
       /// \brief A CXXMemberCallExpr record.
       EXPR_CXX_MEMBER_CALL,
