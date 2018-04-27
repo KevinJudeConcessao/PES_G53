@@ -1689,13 +1689,25 @@ void ASTStmtReader::VisitTypoExpr(TypoExpr *E) {
 //===----------------------------------------------------------------------===//
 
 void ASTStmtReader::VisitReflectionExpr(ReflectionExpr *E) {
-    // FIXME: Implement static reflection serialization.
-    llvm_unreachable("unimplemented");
+    VisitExpr(E);
+    E->KeywordLocation = ReadSourceLocation();
+    E->LParenLocation = ReadSourceLocation();
+    E->RParenLocation = ReadSourceLocation();
 }
 
 void ASTStmtReader::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
-   // FIXME: Implement static reflection serialization.
-   llvm_unreachable("unimplemented");
+    VisitExpr(E);
+    E->KeywordLocation = ReadSourceLocation();
+    E->LParenLocation = ReadSourceLocation();
+    E->RParenLocation = ReadSourceLocation();
+}
+
+void ASTStmtReader::VisitStrLitExpr(StrLitExpr *E) {
+
+}
+
+void ASTStmtReader::VisitIdExprExpr(IdExprExpr *E) {
+
 }
 
 //===----------------------------------------------------------------------===//
@@ -3214,6 +3226,12 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
     case EXPR_REFLECTION_INTRINSIC_EXPR:
       S = new (Context) ReflectionIntrinsicExpr(Empty);
       break;
+    case EXPR_STRLIR_EXPR:
+      S = new (Context) StrLitExpr(Empty);
+        break;
+    case EXPR_IDEXPR_EXPR:
+      S = new (Context) IdExprExpr(Empty);
+        break;
 
     case EXPR_MEMBER: {
       // We load everything here and fully initialize it at creation.

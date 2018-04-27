@@ -7331,6 +7331,35 @@ TreeTransform<Derived>::TransformReflectionIntrinsicExpr(ReflectionIntrinsicExpr
     return RebuildReflectionIntrinsicExpr(E->getKeywordLoc(), DeclPtrValue, IntrinsicID, ExprType);
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformStrLitExpr(StrLitExpr *E) {
+    return getSema().CreateStringLiteralObject(E->getStrLitType(), E->getLocStart());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformIdExprExpr(IdExprExpr *E) {
+    llvm::SmallVector<Expr*, 4> TransformedIdExprParts;
+    for (Expr *Part: E->getIdExprParts()) {
+        ExprResult Res = getDerived().TransformExpr(Part);
+        if (Res.isInvalid())
+            return ExprError();
+        else TransformedIdExprParts.push_back(Res.get());
+    }
+    return getSema().ActOnIdExprExpression(llvm::makeArrayRef<Expr*>(TransformedIdExprParts.begin(), TransformedIdExprParts.end()),
+                                           E->getExprLoc());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXForConstexprStmt(CXXForConstexprStmt *S) {
+    StmtResult LoopVarDecl = getDerived().TransformStmt(S->getLoopVarStmt());
+    StmtResult RangeVarDecl = getDerived().TransformStmt(S->getRangeStmt());
+    return getSema().BuildForConstexprStmt(S->getForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+                                           LoopVarDecl.get(), RangeVarDecl.get(), S->getRParenLoc());
+}
+
 // Objective-C Statements.
 
 template<typename Derived>
@@ -7658,12 +7687,6 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
     return S;
 
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
-}
-
-template<typename Derived>
-StmtResult
-TreeTransform<Derived>::TransformCXXForConstexprStmt(CXXForConstexprStmt *S) {
-    return S;
 }
 
 template<typename Derived>

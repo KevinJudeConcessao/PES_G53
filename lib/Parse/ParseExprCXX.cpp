@@ -3311,6 +3311,7 @@ Parser::ParseStrLitExpression() {
     return Actions.ActOnStrLitExpression(Str->getString(), KWLoc);
 }
 
+#if 0
 ExprResult
 Parser::ParseIdExprExpression() {
     assert(Tok.is(tok::kw_idexpr) && "Not a idexpr expression");
@@ -3321,7 +3322,30 @@ Parser::ParseIdExprExpression() {
         return ExprError();
     }
     ExprResult IdExprRes = ParseConstantExpression();
+    IdExprRes.get()->dump();
     if (Tracker.consumeClose())
         return ExprError();
-    return Actions.ActOnIdExprExpression(IdExprRes.get()->getType(), KWLocation);
+    return Actions.ActOnIdExprExpression(IdExprRes.get()->getType(), IdExprRes.get(), KWLocation);
+}
+#endif
+
+ExprResult
+Parser::ParseIdExprExpression() {
+    SourceLocation KWLocation = ConsumeToken();
+    BalancedDelimiterTracker Tracker(*this, tok::l_paren);
+    if (Tracker.expectAndConsume(diag::err_expected, "(")) {
+        SkipUntil(tok::semi);
+        return ExprError();
+    }
+    llvm::SmallVector<Expr*, 4> IdExprParts;
+    do {
+        ExprResult Res = ParseConstantExpression();
+        if (Res.isInvalid())
+            return ExprError();
+        IdExprParts.push_back(Res.get());
+    } while (TryConsumeToken(tok::comma));
+    if (Tracker.consumeClose())
+        return ExprError();
+    return Actions.ActOnIdExprExpression(llvm::makeArrayRef<Expr*>(IdExprParts.begin(), IdExprParts.end()),
+                                        KWLocation);
 }

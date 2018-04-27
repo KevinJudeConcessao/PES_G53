@@ -1482,6 +1482,8 @@ namespace clang {
       // C++ Reflection Support
       EXPR_REFLECTION_EXPR,
       EXPR_REFLECTION_INTRINSIC_EXPR,
+      EXPR_STRLIR_EXPR,
+      EXPR_IDEXPR_EXPR,
 
       // CUDA
       EXPR_CUDA_KERNEL_CALL,       // CUDAKernelCallExpr      

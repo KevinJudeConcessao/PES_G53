@@ -4372,6 +4372,50 @@ public:
     friend class ASTStmtWriter;
 };
 
+class IdExprExpr : public Expr {
+private:
+    Expr** IdExprParts;
+    std::size_t NumberOfParts;
+    SourceLocation Loc;
+public:
+    IdExprExpr(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc)
+        : Expr(IdExprExprClass, QualType(), VK_LValue, OK_Ordinary, true, true, false, false),
+          IdExprParts(new Expr*[IdExprParts.size()]), NumberOfParts(IdExprParts.size()), Loc(Loc) {
+        std::copy(IdExprParts.begin(), IdExprParts.end(), this->IdExprParts);
+    }
+    IdExprExpr(EmptyShell Empty)
+        : Expr(IdExprExprClass, Empty) {}
+    llvm::ArrayRef<Expr*> getIdExprParts() { return llvm::ArrayRef<Expr*>(IdExprParts, NumberOfParts); }
+    SourceLocation getLocStart() const LLVM_READONLY { return Loc; }
+    SourceLocation getLocEnd() const LLVM_READONLY { return Loc; }
+    child_range children() {
+        return child_range(child_iterator(), child_iterator());
+    }
+    ~IdExprExpr() { delete [] IdExprParts; }
+    friend class ASTStmtReader;
+    friend class ASTStmtWriter;
+};
+
+class StrLitExpr : public Expr {
+private:
+    QualType StrlitType;
+    SourceLocation Loc;
+public:
+    StrLitExpr(QualType StrlitType, SourceLocation Loc)
+        : Expr(StrLitExprClass, QualType(), VK_LValue, OK_Ordinary, false, false, false, false),
+          StrlitType(StrlitType), Loc(Loc) {}
+    StrLitExpr(EmptyShell Empty)
+        : Expr(StrLitExprClass, Empty) {}
+    QualType getStrLitType()  const LLVM_READONLY { return StrlitType; }
+    SourceLocation getLocStart() const LLVM_READONLY { return Loc; }
+    SourceLocation getLocEnd() const LLVM_READONLY { return Loc; }
+    child_range children() {
+        return child_range(child_iterator(), child_iterator());
+    }
+    friend class ASTStmtReader;
+    friend class ASTStmtWriter;
+};
+
 }  // end namespace clang
 
 #endif

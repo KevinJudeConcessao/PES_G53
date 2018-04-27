@@ -2091,20 +2091,18 @@ StmtResult Sema::ActOnForConstexprStmt(Scope *S, SourceLocation ForLoc,
         return StmtError();
     }
     SourceLocation RangeVarLoc = Collection->getLocStart();
-    IdentifierInfo *II = &PP.getIdentifierTable().get("__range");
-    TypeSourceInfo *TInfo = Context.getTrivialTypeSourceInfo(Context.getAutoRRefDeductType(), RangeVarLoc);
-    VarDecl *RangeVarDecl = VarDecl::Create(Context, CurContext, RangeVarLoc, RangeVarLoc, II,
-                                            Context.getAutoRRefDeductType(), TInfo,StorageClass::SC_None);
-    AddInitializerToDecl(RangeVarDecl, Collection, /*DirectInit=*/false);
-    FinalizeDeclaration(RangeVarDecl);
-    CurContext->addHiddenDecl(RangeVarDecl);
-    StmtResult RangeDecl = ActOnDeclStmt(BuildDeclaratorGroup(llvm::MutableArrayRef<Decl*>((Decl **)&RangeVarDecl, 1)),
-                                         RangeVarLoc, RangeVarLoc);
-    if (RangeDecl.isInvalid()) {
-        RangeVarDecl->setInvalidDecl();
+    VarDecl *RangeVarDecl = BuildForRangeVarDecl(*this, RangeVarLoc, Context.getAutoRRefDeductType(), "__range");
+    if (FinishForRangeVarDecl(*this, RangeVarDecl, Collection, RangeVarLoc, diag::err_for_range_deduction_failure)) {
+        DS->getSingleDecl()->setInvalidDecl();
         return StmtError();
     }
-    return BuildForConstexprStmt(ForLoc, ConstexprLoc, ColonLoc, DS, RangeDecl.get(), RParenLoc);
+    DeclGroupPtrTy RangeVarDeclGroup = BuildDeclaratorGroup(MutableArrayRef<Decl *>((Decl **)&RangeVarDecl, 1));
+    StmtResult RangeDecl = ActOnDeclStmt(RangeVarDeclGroup, RParenLoc, RParenLoc);
+    if (RangeDecl.isInvalid()) {
+        DS->getSingleDecl()->setInvalidDecl();
+        return StmtError();
+    }
+    return BuildForConstexprStmt(ForLoc, ConstexprLoc, ColonLoc, LoopVar, RangeDecl.get(), RParenLoc);
 }
 
 static bool GetTupleSize(Sema &S, QualType TupleType, llvm::APSInt& TupleSize, SourceLocation Loc) {
@@ -2857,15 +2855,20 @@ StmtResult Sema::FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body) {
         LookupQualifiedName(ValueResult, SpecDecl);
         CXXMethodDecl *ValueMethodDecl = ValueResult.getAsSingle<CXXMethodDecl>();
 
-        DeclRefExpr *FuncDRE = DeclRefExpr::Create(Context, ValueMethodDecl->getQualifierLoc(), SourceLocation(),
+        DeclRefExpr *FuncDRE = BuildDeclRefExpr(ValueMethodDecl, ValueMethodDecl->getType(), VK_LValue, Loc).getAs<DeclRefExpr>();
+        DeclRefExpr *ArgDRE = BuildDeclRefExpr(RangeDecl, StdGetArgType, VK_LValue, Loc).getAs<DeclRefExpr>();
+#if 0
+        DeclRefExpr::Create(Context, ValueMethodDecl->getQualifierLoc(), SourceLocation(),
                                                    ValueMethodDecl, /*RefersToEnclosingVatiableorCapture*/ false,
                                                    ValueIdDNI, ValueMethodDecl->getType(), VK_LValue);
-
-        DeclRefExpr *ArgDRE = DeclRefExpr::Create(Context, RangeDecl->getQualifierLoc(), SourceLocation(),
+        DeclRefExpr::Create(Context, RangeDecl->getQualifierLoc(), SourceLocation(),
                                                   RangeDecl,  /*RefersToEnclosingVatiableorCapture*/ false,
                                                   DeclarationNameInfo(RangeDecl->getDeclName(), Loc),
-                                                  StdGetArgType, VK_XValue);
+                                                  StdGetArgType, VK_LValue);
+
         MarkDeclRefReferenced(FuncDRE);
+        MarkDeclRefReferenced(ArgDRE);
+#endif
         Expr* Args[] = { ArgDRE };
         ExprResult Call = ActOnCallExpr(getCurScope(), FuncDRE, Loc, Args, Loc);
 

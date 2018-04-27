@@ -4234,7 +4234,7 @@ public:
   ExprResult ActOnReflectionIntrinsicExpression(SourceLocation KWLoc, SourceLocation LParenLoc,
                                                 SmallVector<Expr*, 2> IntrinsicArgs, SourceLocation RParenLoc);
   ExprResult ActOnStrLitExpression(const llvm::StringRef& String, SourceLocation Loc);
-  ExprResult ActOnIdExprExpression(QualType Ty, SourceLocation Loc);
+  ExprResult ActOnIdExprExpression(llvm::ArrayRef<Expr *> IdExprParts, SourceLocation Loc);
   ExprResult BuildIdExprExpression(llvm::StringRef Id, SourceLocation Loc);
   ExprResult BuildReflectionIntrinsicExpression();
 

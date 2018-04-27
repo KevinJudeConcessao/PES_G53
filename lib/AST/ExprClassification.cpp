@@ -304,7 +304,10 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::ReflectionExprClass:
   case Expr::ReflectionIntrinsicExprClass:
      return Cl::CL_ClassTemporary;
-
+  case Expr::IdExprExprClass:
+     return Cl::CL_LValue;
+  case Expr::StrLitExprClass:
+     return Cl::CL_ClassTemporary;
 
     // __builtin_choose_expr is equivalent to the chosen expression.
   case Expr::ChooseExprClass:

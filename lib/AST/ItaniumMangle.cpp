@@ -3644,6 +3644,8 @@ recurse:
 
   case Expr::ReflectionExprClass:
   case Expr::ReflectionIntrinsicExprClass:
+  case Expr::StrLitExprClass:
+  case Expr::IdExprExprClass:
     {
       DiagnosticsEngine &Diags = Context.getDiags();
       unsigned DiagID = Diags.getCustomDiagID(

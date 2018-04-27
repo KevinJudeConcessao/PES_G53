@@ -157,6 +157,8 @@ def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 // C++ Reflection TS expressions
 def ReflectionExpr : DStmt<Expr>;
 def ReflectionIntrinsicExpr : DStmt<Expr>;
+def IdExprExpr : DStmt<Expr>;
+def StrLitExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

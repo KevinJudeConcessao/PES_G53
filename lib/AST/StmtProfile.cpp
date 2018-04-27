@@ -1784,6 +1784,14 @@ void StmtProfiler::VisitReflectionIntrinsicExpr(const ReflectionIntrinsicExpr *E
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitStrLitExpr(const StrLitExpr *E) {
+    VisitExpr(E);
+}
+
+void StmtProfiler::VisitIdExprExpr(const IdExprExpr *E) {
+    VisitExpr(E);
+}
+
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
   VisitExpr(E);  
 }

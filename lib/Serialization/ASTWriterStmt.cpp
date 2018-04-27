@@ -1750,6 +1750,15 @@ void ASTStmtWriter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
     Code = serialization::EXPR_REFLECTION_INTRINSIC_EXPR;
 }
 
+void ASTStmtWriter::VisitIdExprExpr(IdExprExpr *E) {
+    VisitExpr(E);
+    Record.AddSourceLocation(E->getLocStart());
+}
+
+void ASTStmtWriter::VisitStrLitExpr(StrLitExpr *E) {
+    VisitExpr(E);
+    Record.AddSourceLocation(E->getLocStart());
+}
 //===----------------------------------------------------------------------===//
 // CUDA Expressions and Statements.
 //===----------------------------------------------------------------------===//

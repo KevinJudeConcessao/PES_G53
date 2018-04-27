@@ -606,22 +606,49 @@ Sema::isStdStringLiteral(QualType Ty, SourceLocation Loc) {
 }
 
 ExprResult
-Sema::ActOnIdExprExpression(QualType Ty, SourceLocation Loc) {
-    if (!isStdStringLiteral(Ty, Loc))
-        return ExprError(Diag(Loc, diag::err_idexpr_invalid_type) << Ty.getAsString());
-    llvm::ArrayRef<TemplateArgument> TemplateArgs;
-    if (const TemplateSpecializationType *TSTy = Ty->getAs<TemplateSpecializationType>())
-        TemplateArgs = TSTy->template_arguments();
-    else if (const RecordType *Rty = Ty->getAs<RecordType>()) {
-        ClassTemplateSpecializationDecl *Spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(Rty->getDecl());
-        TemplateArgs = Spec->getTemplateArgs().get(0).getPackAsArray();
+Sema::ActOnIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc) {
+    if (std::any_of(IdExprParts.begin(), IdExprParts.end(), [](Expr *E){ return E->isTypeDependent()
+                                                                             || E->isInstantiationDependent()
+                                                                             || E->isValueDependent()
+                                                                             || E->containsUnexpandedParameterPack(); })){
+        return new (Context) IdExprExpr(IdExprParts, Loc);
     }
-    llvm::SmallVector<char, 8> Characters;
-    std::transform(TemplateArgs.begin(), TemplateArgs.end(), std::back_inserter(Characters),
-                   [](TemplateArgument Argument) -> char { return static_cast<char>(Argument.getAsIntegral().getExtValue()); });
-    llvm::StringRef Identifier(std::string(Characters.begin(), Characters.end()));
-    llvm::outs() << Identifier;
-    return BuildIdExprExpression(Identifier, Loc);
+    llvm::SmallVector<char, 16> IdNameCharacters;
+    for (Expr *E: IdExprParts) {
+        if (StringLiteral *S = llvm::dyn_cast<StringLiteral>(E)) {
+            StringRef String = S->getString();
+            std::transform(String.begin(), String.end(), std::back_inserter(IdNameCharacters),
+                           [](char Character) -> char { return Character; });
+        }
+        else if (E->isIntegerConstantExpr(Context)) {
+            llvm::APSInt Integer = llvm::APSInt::get(0);
+            E->EvaluateAsInt(Integer, Context);
+            std::string StringRep = Integer.toString(10);;
+            std::transform(StringRep.begin(), StringRep.end(), std::back_inserter(IdNameCharacters),
+                  [](char Character) -> char { return Character; });
+        }
+        else if (isStdStringLiteral(E->getType(), Loc)) {
+            llvm::ArrayRef<TemplateArgument> TemplateArgs;
+            QualType Ty = E->getType();
+            if (const TemplateSpecializationType *TSTy = Ty->getAs<TemplateSpecializationType>())
+                TemplateArgs = TSTy->template_arguments();
+            else if (const RecordType *Rty = Ty->getAs<RecordType>()) {
+                ClassTemplateSpecializationDecl *Spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(Rty->getDecl());
+                TemplateArgs = Spec->getTemplateArgs().get(0).getPackAsArray();
+            }
+            std::transform(TemplateArgs.begin(), TemplateArgs.end(), std::back_inserter(IdNameCharacters),
+                           [](TemplateArgument Argument) -> char { return static_cast<char>(Argument.getAsIntegral().getExtValue()); });
+        }
+        else if (DeclRefExpr *D = llvm::dyn_cast<DeclRefExpr>(E)) {
+            StringRef String = D->getDecl()->getName();
+            std::transform(String.begin(), String.end(), std::back_inserter(IdNameCharacters),
+                           [](char Character) { return Character; });
+        } else {
+            return ExprError();
+        }
+    }
+    return BuildIdExprExpression(llvm::StringRef(std::string(IdNameCharacters.begin(), IdNameCharacters.end())),
+                                 Loc);
 }
 
 ExprResult

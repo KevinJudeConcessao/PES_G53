@@ -2408,6 +2408,14 @@ void StmtPrinter::VisitReflectionIntrinsicExpr(ReflectionIntrinsicExpr *E) {
   // #FIXME: Add more information !!
 }
 
+void StmtPrinter::VisitStrLitExpr(StrLitExpr *E) {
+
+}
+
+void StmtPrinter::VisitIdExprExpr(IdExprExpr *E) {
+
+}
+
 void StmtPrinter::VisitExprWithCleanups(ExprWithCleanups *E) {
   // Just forward to the subexpression.
   PrintExpr(E->getSubExpr());
