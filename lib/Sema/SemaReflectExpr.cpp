@@ -261,14 +261,14 @@ Sema::CreateStringLiteralObject(QualType Ty, SourceLocation Loc) {
     CXXConstructorDecl *CtorDecl = LookupDefaultConstructor(StdStringViewSpecDecl);
     TypeSourceInfo* TInfo = Context.CreateTypeSourceInfo(Ty);
     MarkFunctionReferenced(CtorDecl->getLocation(), CtorDecl);
-    CXXTemporaryObjectExpr *TempObjExpr = new (Context) CXXTemporaryObjectExpr(
-                Context, CtorDecl, Ty,
-                TInfo, {}, SourceRange(Loc),
-                /*HadMultipleCandidates=*/ false,
-                /*isListInitialization= */ false,
-                /*isStdInitListInitialization=*/ false,
-                /*RequiresZeroInit=     */ false);
-    return TempObjExpr;
+    CXXConstructExpr *CtorExpr = CXXConstructExpr::Create(Context, Ty, Loc, CtorDecl,
+                                                          /*Elidable=*/ false, {},
+                                                          /*HadMultipleCandidates=*/ false,
+                                                          /*isListInitialization= */ false,
+                                                          /*isStdInitListInitialization=*/ false,
+                                                          /*RequiresZeroInit=     */ false,
+                                                          CXXConstructExpr::CK_Complete, SourceRange(Loc));
+    return MaybeBindToTemporary(CtorExpr);
 }
 
 ExprResult
@@ -360,13 +360,14 @@ ExprResult
 Sema::CreateMetaDeclObject(QualType MetaDeclObjectType, SourceLocation Loc) {
     CXXConstructorDecl *CtorDecl = LookupDefaultConstructor(MetaDeclObjectType->getAsCXXRecordDecl());
     MarkFunctionReferenced(Loc, CtorDecl);
-    return new (Context) CXXTemporaryObjectExpr(Context, CtorDecl, MetaDeclObjectType,
-                                                Context.getTrivialTypeSourceInfo(MetaDeclObjectType),
-                                                {}, SourceRange(Loc),
-                                                /*HadMultipleCandidates=*/ false,
-                                                /*isListInitialization= */ false,
-                                                /*isStdInitListInitialization=*/ false,
-                                                /*RequiresZeroInit=     */ false);
+    CXXConstructExpr *E = CXXConstructExpr::Create(Context, MetaDeclObjectType, Loc, CtorDecl,
+                                     /*Elidable=*/ false, {},
+                                     /*HadMultipleCandidates=*/ false,
+                                     /*isListInitialization= */ false,
+                                     /*isStdInitListInitialization=*/ false,
+                                     /*RequiresZeroInit=     */ false,
+                                     CXXConstructExpr::CK_Complete, SourceRange(Loc));
+    return MaybeBindToTemporary(E);
 }
 
 static TemplateArgument
@@ -607,16 +608,40 @@ Sema::isStdStringLiteral(QualType Ty, SourceLocation Loc) {
 
 ExprResult
 Sema::ActOnIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc) {
-    if (std::any_of(IdExprParts.begin(), IdExprParts.end(), [](Expr *E){ return E->isTypeDependent()
-                                                                             || E->isInstantiationDependent()
-                                                                             || E->isValueDependent()
-                                                                             || E->containsUnexpandedParameterPack(); })){
-        return new (Context) IdExprExpr(IdExprParts, Loc);
+    bool TypeDependent = false;
+    bool InstantiationDependent = false;
+    bool ValueDependent = false;
+    bool UnexpandedPack = false;
+    for (Expr * IdExprPart : IdExprParts) {
+        if (IdExprPart->isTypeDependent())
+            TypeDependent = true;
+        if (IdExprPart->isInstantiationDependent())
+            InstantiationDependent = true;
+        if (IdExprPart->isValueDependent())
+            ValueDependent = true;
+        if (IdExprPart->containsUnexpandedParameterPack())
+            UnexpandedPack = true;
     }
+
+    if (TypeDependent || InstantiationDependent || ValueDependent || UnexpandedPack){
+            llvm ::outs() << "Inside idexpr";
+            return new (Context) IdExprExpr(IdExprParts, Loc, Context.DependentTy, TypeDependent, ValueDependent, InstantiationDependent, UnexpandedPack);
+    }    
+    return BuildIdExprExpression(IdExprParts, Loc);
+}
+
+ExprResult
+Sema::BuildIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc) {
     llvm::SmallVector<char, 16> IdNameCharacters;
     for (Expr *E: IdExprParts) {
+        E->dump();
         if (StringLiteral *S = llvm::dyn_cast<StringLiteral>(E)) {
             StringRef String = S->getString();
+            for (char c: String) {
+                if(c == 0)
+                    llvm::outs() << "NULL";
+                else llvm::outs() << c;
+            }
             std::transform(String.begin(), String.end(), std::back_inserter(IdNameCharacters),
                            [](char Character) -> char { return Character; });
         }
@@ -647,12 +672,7 @@ Sema::ActOnIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Lo
             return ExprError();
         }
     }
-    return BuildIdExprExpression(llvm::StringRef(std::string(IdNameCharacters.begin(), IdNameCharacters.end())),
-                                 Loc);
-}
-
-ExprResult
-Sema::BuildIdExprExpression(llvm::StringRef Id, SourceLocation Loc) {
+    llvm::StringRef Id(std::string(IdNameCharacters.begin(), IdNameCharacters.end()));
     LookupResult IdResult(*this, &PP.getIdentifierTable().get(Id), Loc,
                                 Sema::LookupNameKind::LookupOrdinaryName);
     LookupName(IdResult, getCurScope());

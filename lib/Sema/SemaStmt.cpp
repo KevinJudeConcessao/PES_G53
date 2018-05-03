@@ -2888,6 +2888,7 @@ StmtResult Sema::FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body) {
     }
 
     Stmt *FinalStmt = new (Context) CompoundStmt(Context, llvm::makeArrayRef<Stmt*>(CompoundStatements), ForStmt->getLocStart(), ForStmt->getLocEnd());
+    FinalStmt->dump();
     return FinalStmt;
 }
 StmtResult Sema::ActOnGotoStmt(SourceLocation GotoLoc,

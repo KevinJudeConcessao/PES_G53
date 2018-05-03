@@ -4378,8 +4378,8 @@ private:
     std::size_t NumberOfParts;
     SourceLocation Loc;
 public:
-    IdExprExpr(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc)
-        : Expr(IdExprExprClass, QualType(), VK_LValue, OK_Ordinary, true, true, false, false),
+    IdExprExpr(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc, QualType Ty, bool TD, bool VD, bool ID, bool UPP)
+        : Expr(IdExprExprClass, Ty, VK_LValue, OK_Ordinary, TD, VD, ID, UPP),
           IdExprParts(new Expr*[IdExprParts.size()]), NumberOfParts(IdExprParts.size()), Loc(Loc) {
         std::copy(IdExprParts.begin(), IdExprParts.end(), this->IdExprParts);
     }

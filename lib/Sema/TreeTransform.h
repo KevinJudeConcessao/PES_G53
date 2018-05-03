@@ -7341,6 +7341,7 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformIdExprExpr(IdExprExpr *E) {
     llvm::SmallVector<Expr*, 4> TransformedIdExprParts;
+    llvm::outs() << "Inside tree transform";
     for (Expr *Part: E->getIdExprParts()) {
         ExprResult Res = getDerived().TransformExpr(Part);
         if (Res.isInvalid())
