@@ -634,7 +634,6 @@ ExprResult
 Sema::BuildIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Loc) {
     llvm::SmallVector<char, 16> IdNameCharacters;
     for (Expr *E: IdExprParts) {
-        E->dump();
         if (StringLiteral *S = llvm::dyn_cast<StringLiteral>(E)) {
             StringRef String = S->getString();
             for (char c: String) {
@@ -661,6 +660,11 @@ Sema::BuildIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Lo
                 ClassTemplateSpecializationDecl *Spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(Rty->getDecl());
                 TemplateArgs = Spec->getTemplateArgs().get(0).getPackAsArray();
             }
+            for (TemplateArgument c: TemplateArgs) {
+                if(static_cast<char>(c.getAsIntegral().getExtValue()) == 0)
+                    llvm::outs() << "NULL";
+                else llvm::outs() <<  "F---" << static_cast<char>(c.getAsIntegral().getExtValue()) << "\n";
+            }
             std::transform(TemplateArgs.begin(), TemplateArgs.end(), std::back_inserter(IdNameCharacters),
                            [](TemplateArgument Argument) -> char { return static_cast<char>(Argument.getAsIntegral().getExtValue()); });
         }
@@ -672,7 +676,10 @@ Sema::BuildIdExprExpression(llvm::ArrayRef<Expr*> IdExprParts, SourceLocation Lo
             return ExprError();
         }
     }
-    llvm::StringRef Id(std::string(IdNameCharacters.begin(), IdNameCharacters.end()));
+    char *str = new char[IdNameCharacters.size()]; // should be changed !!
+    std::copy(IdNameCharacters.begin(), IdNameCharacters.end(), str);
+    llvm::StringRef Id(str, IdNameCharacters.size());
+    llvm::outs() << "ID: " << Id;
     LookupResult IdResult(*this, &PP.getIdentifierTable().get(Id), Loc,
                                 Sema::LookupNameKind::LookupOrdinaryName);
     LookupName(IdResult, getCurScope());

@@ -38,6 +38,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "TreeTransform.h"
 
 using namespace clang;
 using namespace sema;
@@ -2090,6 +2091,9 @@ StmtResult Sema::ActOnForConstexprStmt(Scope *S, SourceLocation ForLoc,
         Diag(ForLoc, diag::err_multiple_decls_in_for_constexpr);
         return StmtError();
     }
+    ValueDecl *LoopVarDecl = llvm::dyn_cast<ValueDecl>(DS->getSingleDecl());
+    if(llvm::isa<AutoType>(LoopVarDecl->getType().getNonReferenceType()))
+        LoopVarDecl->setType(Context.DependentTy);
     SourceLocation RangeVarLoc = Collection->getLocStart();
     VarDecl *RangeVarDecl = BuildForRangeVarDecl(*this, RangeVarLoc, Context.getAutoRRefDeductType(), "__range");
     if (FinishForRangeVarDecl(*this, RangeVarDecl, Collection, RangeVarLoc, diag::err_for_range_deduction_failure)) {
@@ -2136,12 +2140,8 @@ StmtResult Sema::BuildForConstexprStmt(SourceLocation ForLoc, SourceLocation Con
                                        SourceLocation RParenLoc) {
     DeclStmt *LoopVarDeclStmt = llvm::dyn_cast<DeclStmt>(LoopVarDecl);
     DeclStmt *RangeVarDeclStmt = llvm::dyn_cast<DeclStmt>(RangeVarDecl);
-    VarDecl *RangeDecl = llvm::dyn_cast<VarDecl>(RangeVarDeclStmt->getSingleDecl());
-    llvm::APSInt NumExpansions = llvm::APSInt::get(0);
-    GetTupleSize(*this, RangeDecl->getType(), NumExpansions, ForLoc);
-    llvm::outs() << "Num Expansions: " << NumExpansions.getExtValue() << "\n";
     return new (Context) CXXForConstexprStmt(LoopVarDeclStmt, RangeVarDeclStmt,
-                                             /*LoopBody=*/ nullptr, NumExpansions,
+                                             /*LoopBody=*/ nullptr, llvm::APSInt::get(0),
                                              ForLoc, ConstexprLoc, ColonLoc, RParenLoc);
 }
 
@@ -2803,21 +2803,73 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
   return S;
 }
 
+class MyRecursiveASTVisitor :
+        public RecursiveASTVisitor<MyRecursiveASTVisitor> {
+private:
+    Sema& SemaRef;
+    ValueDecl *TargetDecl;
+    ValueDecl *ReplacementDecl;
+public:
+    explicit MyRecursiveASTVisitor(Sema &SemaRef, ValueDecl *TargetDecl, ValueDecl *ReplacementDecl)
+        : SemaRef(SemaRef), TargetDecl(TargetDecl), ReplacementDecl(ReplacementDecl) {
+        llvm::outs() << "Rebuilding...";
+    }
+    bool TraverseDeclRefExpr(DeclRefExpr *E, DataRecursionQueue *Queue = nullptr);
+};
+
+bool MyRecursiveASTVisitor::TraverseDeclRefExpr(DeclRefExpr *E, DataRecursionQueue *Queue) {
+    if (TargetDecl == E->getDecl()) {
+        E->setDecl(ReplacementDecl);
+        SemaRef.MarkDeclRefReferenced(E);
+    }
+    return RecursiveASTVisitor<MyRecursiveASTVisitor>::VisitDeclRefExpr(E);
+}
+
+class CompoundStmtTransform
+        : public TreeTransform<CompoundStmtTransform> {
+private:
+    Sema &SemaRef;
+    ValueDecl *TargetDecl;
+    ValueDecl *ReplacementDecl;
+public:
+    explicit CompoundStmtTransform(Sema &SemaRef, ValueDecl *TargetDecl, ValueDecl *ReplacementDecl, CompoundStmt *TargetStmt)
+        : TreeTransform<CompoundStmtTransform>(SemaRef), SemaRef(SemaRef), TargetDecl(TargetDecl), ReplacementDecl(ReplacementDecl) {
+    }
+    StmtResult TransformDeclStmt(DeclStmt *S) {
+        return TreeTransform<CompoundStmtTransform>::TransformDeclStmt(S);
+    }
+    ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+        DeclRefExpr *NewDeclRefExpr = E;
+        if (TargetDecl == E->getDecl())
+            NewDeclRefExpr = new (SemaRef.Context) DeclRefExpr(ReplacementDecl, E->refersToEnclosingVariableOrCapture(), ReplacementDecl->getType(),
+                                                               E->getValueKind(), E->getLocation());
+        NewDeclRefExpr = llvm::dyn_cast<DeclRefExpr>(
+                        TreeTransform<CompoundStmtTransform>::TransformDeclRefExpr(NewDeclRefExpr).get());
+        SemaRef.MarkDeclRefReferenced(NewDeclRefExpr);
+        return NewDeclRefExpr;
+    }
+};
+
+
 StmtResult Sema::FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body) {
     if (!ForConstexpr || !Body)
         return StmtError();
     CXXForConstexprStmt *ForStmt = llvm::dyn_cast<CXXForConstexprStmt>(ForConstexpr);
     SourceLocation Loc = ForStmt->getLocStart();
-    ForStmt->setLoopBody(Body);
     DeclStmt *RangeDeclStmt = ForStmt->getRangeStmt();
     VarDecl *RangeDecl = llvm::dyn_cast<VarDecl>(RangeDeclStmt->getSingleDecl());
+    RangeDecl->dumpColor();
     DeclStmt *LoopVarStmt = ForStmt->getLoopVarStmt();
     VarDecl *LoopVar = llvm::dyn_cast<VarDecl>(LoopVarStmt->getSingleDecl());
-
     QualType StdGetArgType = RangeDecl->getType().getNonReferenceType();
-    if (RangeDecl->getInit()->isTypeDependent())
+    if (RangeDecl->getInit()->isTypeDependent()) {
+        ForStmt->setLoopBody(Body);
         return ForStmt;
-    if (ForStmt->getNumExpansions().isNullValue())
+    }
+    llvm::APSInt NumExpansions = llvm::APSInt::get(0);
+    GetTupleSize(*this, RangeDecl->getType(), NumExpansions, ForStmt->getForLoc());
+    llvm::outs() << "Num Expansions: " << NumExpansions.getExtValue() << "\n";
+    if (NumExpansions.isNullValue())
         return new (Context) CompoundStmt(ForConstexpr->getLocStart());
 
     /*
@@ -2838,7 +2890,7 @@ StmtResult Sema::FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body) {
     llvm::SmallVector<Stmt*, 8> CompoundStatements;
     CompoundStatements.push_back(RangeDeclStmt);
 
-    for (int64_t counter = 0; counter < ForStmt->getNumExpansions().getExtValue(); ++ counter) {
+    for (int64_t counter = 0; counter < NumExpansions.getExtValue(); ++ counter) {
         TemplateArgumentListInfo ArgListInfo(Loc, Loc);
         TemplateArgument IndexArg(Context, llvm::APSInt::get(counter), Context.getSizeType());
         TemplateArgument TupleTypeArg(StdGetArgType);
@@ -2874,23 +2926,26 @@ StmtResult Sema::FinishForConstexprStmt(Stmt *ForConstexpr, Stmt *Body) {
 
         IdentifierInfo *II = &PP.getIdentifierTable().get(LoopVar->getName());
         QualType NewLoopVarType = Call.get()->getType();
-        NewLoopVarType.dump();
+        NewLoopVarType.setLocalFastQualifiers(0);
         VarDecl *NewLoopVarDecl = VarDecl::Create(Context, CurContext, ForStmt->getLoopVarStmt()->getLocStart(),
                                                   ForStmt->getLoopVarStmt()->getLocEnd(), II, NewLoopVarType,
                                                   Context.getTrivialTypeSourceInfo(NewLoopVarType), SC_None);
+
         AddInitializerToDecl(NewLoopVarDecl, Call.get(), /*DirectInit*/ false);
         FinalizeDeclaration(NewLoopVarDecl);
         StmtResult NewLoopVarStmt = ActOnDeclStmt(BuildDeclaratorGroup(llvm::MutableArrayRef<Decl*>((Decl **)&NewLoopVarDecl, 1)),
                                                   ForStmt->getLoopVarStmt()->getLocStart(), ForStmt->getLoopVarStmt()->getLocEnd());
-        Stmt *LoopBodyExpansionStmts[] = { NewLoopVarStmt.get(), ForStmt->getLoopBody() };
+        CompoundStmtTransform Transformer(*this, LoopVar, NewLoopVarDecl, llvm::dyn_cast<CompoundStmt>(Body));
+        StmtResult NewLoopBodyStmt = Transformer.TransformCompoundStmt(llvm::dyn_cast<CompoundStmt>(Body), true).get();
+        Stmt *LoopBodyExpansionStmts[] = { NewLoopVarStmt.get(), NewLoopBodyStmt.get() };
         CompoundStmt *LoopBodyExpansion = new (Context) CompoundStmt(Context, LoopBodyExpansionStmts, ForStmt->getLocStart(), ForStmt->getLocEnd());
         CompoundStatements.push_back(LoopBodyExpansion);
     }
 
-    Stmt *FinalStmt = new (Context) CompoundStmt(Context, llvm::makeArrayRef<Stmt*>(CompoundStatements), ForStmt->getLocStart(), ForStmt->getLocEnd());
-    FinalStmt->dump();
+    CompoundStmt *FinalStmt = new (Context) CompoundStmt(Context, llvm::makeArrayRef<Stmt*>(CompoundStatements), ForStmt->getLocStart(), ForStmt->getLocEnd());
     return FinalStmt;
 }
+
 StmtResult Sema::ActOnGotoStmt(SourceLocation GotoLoc,
                                SourceLocation LabelLoc,
                                LabelDecl *TheDecl) {

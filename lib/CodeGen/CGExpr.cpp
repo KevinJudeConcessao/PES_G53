@@ -2249,6 +2249,7 @@ static LValue EmitGlobalNamedRegister(const VarDecl *VD, CodeGenModule &CGM) {
 }
 
 LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
+  E->dumpColor();
   const NamedDecl *ND = E->getDecl();
   QualType T = E->getType();
 

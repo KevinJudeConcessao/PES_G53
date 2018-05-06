@@ -7341,7 +7341,6 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformIdExprExpr(IdExprExpr *E) {
     llvm::SmallVector<Expr*, 4> TransformedIdExprParts;
-    llvm::outs() << "Inside tree transform";
     for (Expr *Part: E->getIdExprParts()) {
         ExprResult Res = getDerived().TransformExpr(Part);
         if (Res.isInvalid())
@@ -7355,10 +7354,16 @@ TreeTransform<Derived>::TransformIdExprExpr(IdExprExpr *E) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXForConstexprStmt(CXXForConstexprStmt *S) {
-    StmtResult LoopVarDecl = getDerived().TransformStmt(S->getLoopVarStmt());
+    llvm::outs() << "Finish tree transform" << "\n";
+    //StmtResult LoopVarDecl = getDerived().TransformStmt(S->getLoopVarStmt());
     StmtResult RangeVarDecl = getDerived().TransformStmt(S->getRangeStmt());
-    return getSema().BuildForConstexprStmt(S->getForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-                                           LoopVarDecl.get(), RangeVarDecl.get(), S->getRParenLoc());
+    CXXForConstexprStmt *TargetStmt = llvm::dyn_cast<CXXForConstexprStmt>(getSema().BuildForConstexprStmt(S->getForLoc(),
+                                                                                                          S->getConstexprLoc(),
+                                                                                                          S->getColonLoc(), S->getLoopVarStmt(),
+                                                                                                          RangeVarDecl.get(),
+                                                                                                          S->getRParenLoc()).get());
+    TargetStmt->setLoopBody(S->getLoopBody());
+    return getSema().FinishForConstexprStmt(TargetStmt, TargetStmt->getLoopBody());
 }
 
 // Objective-C Statements.

@@ -3322,7 +3322,6 @@ Parser::ParseIdExprExpression() {
         return ExprError();
     }
     ExprResult IdExprRes = ParseConstantExpression();
-    IdExprRes.get()->dump();
     if (Tracker.consumeClose())
         return ExprError();
     return Actions.ActOnIdExprExpression(IdExprRes.get()->getType(), IdExprRes.get(), KWLocation);
